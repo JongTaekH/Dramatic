@@ -29,8 +29,8 @@ const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 export const TVWIKI_SORT_OPTIONS = [
+  { value: "wr_datetime", label: "최신 등록순" },
   { value: "subidx", label: "최근 방영순" },
-  { value: "wr_datetime", label: "최근 등록순" },
   { value: "wr_hit", label: "조회수 높은순" },
   { value: "wr_good", label: "좋아요 높은순" },
   { value: "wr_6", label: "개봉일 최신순" },
@@ -1075,13 +1075,15 @@ class TvwikiProvider implements AnimeProvider {
     const categoryPath: "drama" | "old_drama" = isOldDrama ? "old_drama" : "drama";
 
     // Sort mapping
-    let sst = params.sort || "subidx";
-    if (!params.sort) {
+    let sst = params.sort || "wr_datetime";
+    if (!params.sort || params.sort === "latest") {
       if (params.category === "top" || params.category === "trending") {
         sst = "wr_hit";
       } else {
-        sst = "subidx";
+        sst = "wr_datetime";
       }
+    } else if (params.sort === "views") {
+      sst = "wr_hit";
     }
 
     const sodParam = sst === "wr_6" || sst === "wr_5" ? "&sod=desc" : "";

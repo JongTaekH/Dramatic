@@ -37,7 +37,7 @@ export default async function HomePage({
   const tab = params.tab || (params.q ? "search" : "drama");
   const q = params.q?.trim() || "";
   const page = parseInt(params.page || "1", 10) || 1;
-  const sort = params.sort || "latest";
+  const sort = params.sort || "wr_datetime";
 
   let items: AnimeListItem[] = [];
   let historyItems: HistoryItem[] = [];
@@ -126,7 +126,7 @@ export default async function HomePage({
       const res = await provider.getAnimeList({
         category,
         page,
-        sort: tab === "top" && sort === "latest" ? "views" : sort,
+        sort: tab === "top" && !params.sort ? "wr_hit" : sort,
       });
       items = res.items;
       has_next = res.has_next;
@@ -143,7 +143,7 @@ export default async function HomePage({
     const p = new URLSearchParams();
     if (tab) p.set("tab", tab);
     if (q) p.set("q", q);
-    if (sort && sort !== "latest") p.set("sort", sort);
+    if (sort && sort !== "wr_datetime") p.set("sort", sort);
     p.set("page", String(page));
 
     Object.entries(newParams).forEach(([k, v]) => {
@@ -173,12 +173,12 @@ export default async function HomePage({
     sectionTitle = "🕒 최근 시청 기록 (이어보기)";
     sectionSubtitle = "시청하던 회차와 진행도가 자동으로 동기화됩니다";
   } else {
-    sectionTitle = "📺 최신 방영 드라마";
-    sectionSubtitle = "현재 방영 중이거나 최근 완결된 한국 드라마 업데이트";
+    sectionTitle = "📺 최신 등록 드라마";
+    sectionSubtitle = "새롭게 등록되거나 업데이트된 한국 드라마 목록";
   }
 
   const showSortBar = !q && (tab === "drama" || tab === "old_drama" || tab === "top");
-  const activeSort = tab === "top" && sort === "latest" ? "views" : sort;
+  const activeSort = tab === "top" && (!params.sort || sort === "views") ? "wr_hit" : sort;
 
   return (
     <div className="min-h-screen bg-[#2B2B2B]">
@@ -221,7 +221,7 @@ export default async function HomePage({
             </Link>
 
             <Link
-              href="/?tab=top&sort=views"
+              href="/?tab=top&sort=wr_hit"
               className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 tab === "top" && !q
                   ? "bg-[#FFFFFF] text-[#2B2B2B] shadow-sm font-bold"
