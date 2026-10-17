@@ -2751,30 +2751,53 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
               name: "mobileCenterControls",
               html: `
                 <div class="art-mobile-center-controls">
-                  <button type="button" class="art-mobile-center-btn art-mobile-seek-backward" id="mobile-seek-backward" aria-label="뒤로 탐색">
+                  <button type="button" class="art-mobile-center-btn art-mobile-seek-backward" id="mobile-seek-backward" aria-label="10초 되감기">
                     <div class="art-mobile-seek-inner">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M11 19V5l-8.5 7 8.5 7zm.5-7l8.5 7V5l-8.5 7z"/>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
                       </svg>
                       <span class="art-mobile-seek-sec" id="mobile-seek-sec-back">${playerSettings.doubleTouchDuration || 10}</span>
                     </div>
                   </button>
                   <button type="button" class="art-mobile-center-btn art-mobile-center-play" id="mobile-center-play" aria-label="재생 또는 일시정지">
-                    <svg class="art-mobile-play-icon" id="mobile-icon-play" width="38" height="38" viewBox="0 0 24 24" fill="currentColor">
+                    <svg class="art-mobile-play-icon" id="mobile-icon-play" width="42" height="42" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M8 5v14l11-7z"/>
                     </svg>
-                    <svg class="art-mobile-pause-icon" id="mobile-icon-pause" width="38" height="38" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+                    <svg class="art-mobile-pause-icon" id="mobile-icon-pause" width="42" height="42" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
                       <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                     </svg>
                   </button>
-                  <button type="button" class="art-mobile-center-btn art-mobile-seek-forward" id="mobile-seek-forward" aria-label="앞으로 탐색">
+                  <button type="button" class="art-mobile-center-btn art-mobile-seek-forward" id="mobile-seek-forward" aria-label="10초 빨리감기">
                     <div class="art-mobile-seek-inner">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M4 19l8.5-7L4 5v14zm9-14v14l8.5-7L13 5z"/>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
                       </svg>
                       <span class="art-mobile-seek-sec" id="mobile-seek-sec-fwd">${playerSettings.doubleTouchDuration || 10}</span>
                     </div>
                   </button>
+                </div>
+                <div class="art-netflix-lock-bar">
+                  <button type="button" class="art-netflix-lock-btn" id="mobile-screen-lock-btn" aria-label="화면 잠금">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span>화면 잠금</span>
+                  </button>
+                </div>
+                <div class="art-netflix-unlock-overlay" id="mobile-screen-unlock-overlay">
+                  <button type="button" class="art-netflix-unlock-pill" id="mobile-screen-unlock-pill">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                    </svg>
+                    <span id="mobile-screen-unlock-text">화면 잠금 해제하려면 탭하세요</span>
+                  </button>
+                </div>
+                <div class="art-longpress-speed-badge" id="mobile-longpress-speed-badge">
+                  <span>⏩ 2.0x 배속 재생 중</span>
                 </div>
               `,
               style: {
@@ -2827,9 +2850,6 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         }
 
         // 🌟 미니 진행바(컨트롤 자동 숨김 = art-mini-progress-bar) 터치 오조작 차단:
-        // 컨트롤이 내려간 상태에서는 미니 진행바에 닿는 touchstart/touchmove를 포캐스 단계에서 stopPropagation하여
-        // ArtPlayer 내부 시크 핸들러 자체를 실행 불능으로 만든다(제스처 탐색 금지, 이동 불가).
-        // 컨트롤바가 완전히 올라온 상태(클래스 제거)에서만 기존과 동일하게 화면 탐색이 허용된다.
         if (art && art.template && art.template.$bottom && art.template.$player) {
             const $miniBottomEl = art.template.$bottom;
             const blockMiniProgressBarTouch = function (evt: TouchEvent) {
@@ -2842,12 +2862,9 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         }
 
         // 🌟 모바일 화면 꾹 누르고 스와이프 탐색 (mobileGesture) 온/오프 제어:
-        // mobileGesture가 false일 때, 영상 화면 영역에서의 touchmove를 캡처 단계에서 stopPropagation하여
-        // Artplayer 내부의 제스처 시크 핸들러(좌우 스와이프 탐색)로 이벤트가 전파되는 것을 원천 차단한다.
-        // 하단 진행바 및 컨트롤 UI는 제외하여 일반적인 버튼 조작 및 진행바 탐색은 정상 유지된다.
         if (art && art.template && art.template.$player) {
           const blockScreenGestureTouchMove = function (evt: TouchEvent) {
-            if (playerSettingsRef.current.mobileGesture) return;
+            if (playerSettingsRef.current.mobileGesture && !art.template.$player.classList.contains("is-screen-locked")) return;
             const target = evt.target as HTMLElement | null;
             if (
               target &&
@@ -2879,11 +2896,18 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         let cumulativeSec = 0;
         let resetSeekTimer: ReturnType<typeof setTimeout> | null = null;
         let rippleHideTimer: ReturnType<typeof setTimeout> | null = null;
-        let wasPlayingBeforeTap = false;
         let lastTouchTimestamp = 0;
+        let isScreenLocked = false;
+        let unlockPromptTimer: ReturnType<typeof setTimeout> | null = null;
+        let unlockConfirmedTap = false;
+
+        // 길게 누르기(Long Press) 2.0x 배속 재생 상태
+        let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+        let isLongPressing = false;
+        let savedRateBeforeLongPress = 1.0;
+        let touchStartPos: { x: number; y: number } | null = null;
 
         const showDoubleTapFeedback = (side: "left" | "right", seconds: number) => {
-          // Document PiP 활성 시 리플/레이블은 PIP 문서에 있으므로 ownerDocument 기준 조회
           const doc = (artRef.current?.template?.$player as HTMLElement | undefined)?.ownerDocument || document;
           const leftRipple = doc.getElementById("dt-ripple-left");
           const rightRipple = doc.getElementById("dt-ripple-right");
@@ -2913,13 +2937,14 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
           }, 600);
         };
 
-        // 🌟 통합 누적 탐색 함수 (모바일 화면 더블터치 & 상태바 중앙 앞뒤 탐색 버튼에서 함께 사용)
-        const executeSeekWithAccumulation = (side: "left" | "right") => {
-          if (!playerSettingsRef.current.doubleTouchSeek) return;
+        // 🌟 통합 누적 탐색 함수 (모바일 화면 더블터치 & 중앙 원형 [↺ 10] / [10 ↻] 원탭 공용)
+        const executeSeekWithAccumulation = (side: "left" | "right", forceAllow = false) => {
+          if (isScreenLocked) return;
+          if (!forceAllow && !playerSettingsRef.current.doubleTouchSeek) return;
           const step = playerSettingsRef.current.doubleTouchDuration || 10;
           const now = Date.now();
 
-          if (side === lastSeekSide && now - lastSeekTime < 650) {
+          if (side === lastSeekSide && now - lastSeekTime < 700) {
             cumulativeSec += step;
           } else {
             cumulativeSec = step;
@@ -2932,7 +2957,6 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
           } else {
             art.seek = Math.min(art.duration || 99999, art.currentTime + step);
           }
-
 
           showDoubleTapFeedback(side, cumulativeSec);
 
@@ -2950,22 +2974,81 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         };
 
         // ==========================================
-        // 🌟 모바일 (터치 디바이스) 전용 넷플릭스 표준 제스처 핸들러
-        // 좌측 35%: ⏪ 두 번 탭할 때마다 뒤로 탐색
-        // 우측 35%: ⏩ 두 번 탭할 때마다 앞으로 탐색
-        // 중앙 30%: 탭 시 컨트롤 토글, 더블 탭 시 재생/일시정지
+        // 🌟 넷플릭스 모바일 화면 터치 제스처 핸들러
+        // 1. 빈 화면 1번 탭: 컨트롤 오버레이(중앙 3버튼 + 하단바 + 잠금버튼) 토글
+        // 2. 좌측 35% / 우측 35% 더블 탭: 컨트롤바 표시 없이 즉시 ±10초 연속 스킵
+        // 3. 중앙 30% 더블 탭: 재생 / 일시정지 토글
+        // 4. 화면 잠금 상태일 때 탭: 하단 '화면 잠금 해제' 버튼 노출
+        // 5. 화면 길게 누르기(0.45초 이상): 누르고 있는 동안 2.0x 배속 재생
         // ==========================================
         let lastTouchTime = 0;
         let lastTouchSide: "left" | "right" | "center" | null = null;
         let touchTapTimer: ReturnType<typeof setTimeout> | null = null;
 
+        const stopLongPressSpeed = () => {
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+          if (isLongPressing) {
+            isLongPressing = false;
+            const doc = (art.template.$player as HTMLElement)?.ownerDocument || document;
+            const badge = doc.getElementById("mobile-longpress-speed-badge");
+            if (badge) badge.classList.remove("active");
+            if (art && art.video) {
+              art.playbackRate = savedRateBeforeLongPress || 1.0;
+              updateSpeed2xButton(art.playbackRate, doc);
+            }
+          }
+        };
+
+        const handleTouchStartForLongPress = (clientX: number, clientY: number, target: HTMLElement | null) => {
+          if (isScreenLocked || !target) return;
+          if (
+            target.closest(
+              ".art-bottom, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, button, a, input, .player-settings-modal-root"
+            )
+          ) {
+            return;
+          }
+          touchStartPos = { x: clientX, y: clientY };
+          if (longPressTimer) clearTimeout(longPressTimer);
+          longPressTimer = setTimeout(() => {
+            if (!art || !art.video || art.video.paused || isScreenLocked) return;
+            isLongPressing = true;
+            savedRateBeforeLongPress = art.playbackRate || 1.0;
+            art.playbackRate = 2.0;
+            if (art.controls) art.controls.show = false;
+            const doc = (art.template.$player as HTMLElement)?.ownerDocument || document;
+            const badge = doc.getElementById("mobile-longpress-speed-badge");
+            if (badge) badge.classList.add("active");
+          }, 450);
+        };
+
+        const handleTouchMoveForLongPress = (clientX: number, clientY: number) => {
+          if (!touchStartPos) return;
+          if (Math.abs(clientX - touchStartPos.x) > 18 || Math.abs(clientY - touchStartPos.y) > 18) {
+            if (longPressTimer && !isLongPressing) {
+              clearTimeout(longPressTimer);
+              longPressTimer = null;
+            }
+          }
+        };
+
         const handleMobileTouchAction = (clientX: number, clientY: number, target: HTMLElement | null) => {
           if (!target) return;
 
-          // 컨트롤 UI, 프로그레스바, 버튼, 모달 등 영역 터치는 화면 제스처에서 완벽 제외
+          // 길게 누르기(2.0x 배속) 후 손을 뗀 경우 탭/더블탭 동작은 실행하지 않고 종료
+          if (isLongPressing) {
+            stopLongPressSpeed();
+            return;
+          }
+          stopLongPressSpeed();
+
+          // 컨트롤 UI, 프로그레스바, 중앙 버튼, 잠금 버튼, 모달 등 영역 터치는 화면 제스처에서 제외
           if (
             target.closest(
-              ".art-bottom, .art-controls, .art-control, .art-progress, .art-progress-control, .art-control-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, button, a, input, .player-settings-modal-root"
+              ".art-bottom, .art-controls, .art-control, .art-progress, .art-progress-control, .art-control-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-pill, button, a, input, .player-settings-modal-root"
             )
           ) {
             return;
@@ -2976,6 +3059,24 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
           const playerEl = art.template.$player as HTMLElement;
           if (playerEl && !playerEl.classList.contains("is-touch-device")) {
             playerEl.classList.add("is-touch-device");
+          }
+
+          // 🌟 화면 잠금(Screen Lock) 상태일 때: 모든 조작 차단 & 하단 잠금 해제 안내 필 표시
+          if (isScreenLocked) {
+            const doc = playerEl?.ownerDocument || document;
+            const unlockOverlay = doc.getElementById("mobile-screen-unlock-overlay");
+            const unlockText = doc.getElementById("mobile-screen-unlock-text");
+            if (unlockOverlay) {
+              unlockConfirmedTap = false;
+              if (unlockText) unlockText.textContent = "화면 잠금 해제하려면 탭하세요";
+              unlockOverlay.classList.toggle("show-unlock-prompt");
+              if (unlockPromptTimer) clearTimeout(unlockPromptTimer);
+              unlockPromptTimer = setTimeout(() => {
+                unlockOverlay.classList.remove("show-unlock-prompt");
+                unlockConfirmedTap = false;
+              }, 3500);
+            }
+            return;
           }
 
           if (!playerSettingsRef.current.doubleTouchSeek) {
@@ -3005,8 +3106,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             side = "center";
           }
 
-          // 🌟 [케이스 1] 좌측 / 우측 영역 더블 탭: 컨트롤바 표시 여부와 무관하게 즉시 10초 스킵!
-          if ((side === "left" || side === "right") && side === lastTouchSide && diff < 380) {
+          // 🌟 [케이스 1] 좌측 / 우측 영역 더블 탭: 컨트롤바 표시 없이 즉시 ±10초 연속 스킵!
+          if ((side === "left" || side === "right") && side === lastTouchSide && diff < 320) {
             if (touchTapTimer) {
               clearTimeout(touchTapTimer);
               touchTapTimer = null;
@@ -3021,7 +3122,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
           }
 
           // 🌟 [케이스 2] 중앙 영역 더블 탭: 재생 / 일시정지 토글
-          if (side === "center" && side === lastTouchSide && diff < 380) {
+          if (side === "center" && side === lastTouchSide && diff < 320) {
             if (touchTapTimer) {
               clearTimeout(touchTapTimer);
               touchTapTimer = null;
@@ -3038,34 +3139,54 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             return;
           }
 
-          // 🌟 [케이스 3] 첫 번째 탭:
+          // 🌟 [케이스 3] 첫 번째 탭: 컨트롤 오버레이(HUD) 토글
           lastTouchTime = now;
           lastTouchSide = side;
 
           if (touchTapTimer) clearTimeout(touchTapTimer);
-          // Use the same window for single- and double-tap detection.
           touchTapTimer = setTimeout(() => {
             touchTapTimer = null;
             lastTouchSide = null;
             if (art && art.controls) {
               art.controls.show = !art.controls.show;
             }
-          }, 380);
+          }, 260);
         };
 
-        let lastPointerType = "";
+        const handlePointerDown = (e: PointerEvent) => {
+          const isTouch = e.pointerType === "touch" || ("ontouchstart" in window && e.pointerType !== "mouse");
+          if (!isTouch) return;
+          handleTouchStartForLongPress(e.clientX, e.clientY, e.target as HTMLElement | null);
+        };
+
+        const handlePointerMove = (e: PointerEvent) => {
+          const isTouch = e.pointerType === "touch" || ("ontouchstart" in window && e.pointerType !== "mouse");
+          if (!isTouch) return;
+          handleTouchMoveForLongPress(e.clientX, e.clientY);
+        };
+
         const handlePointerUp = (e: PointerEvent) => {
-          lastPointerType = e.pointerType;
           const isTouch = e.pointerType === "touch" || ("ontouchstart" in window && e.pointerType !== "mouse");
           if (!isTouch) return;
           lastTouchTimestamp = Date.now();
           handleMobileTouchAction(e.clientX, e.clientY, e.target as HTMLElement | null);
         };
 
+        const handleTouchStart = (e: TouchEvent) => {
+          const touch = e.touches?.[0];
+          if (!touch) return;
+          handleTouchStartForLongPress(touch.clientX, touch.clientY, e.target as HTMLElement | null);
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+          const touch = e.touches?.[0];
+          if (!touch) return;
+          handleTouchMoveForLongPress(touch.clientX, touch.clientY);
+        };
+
         const handleTouchEnd = (e: TouchEvent) => {
           const touch = e.changedTouches?.[0];
           if (!touch) return;
-          lastPointerType = "touch";
           lastTouchTimestamp = Date.now();
           handleMobileTouchAction(touch.clientX, touch.clientY, e.target as HTMLElement | null);
         };
@@ -3074,16 +3195,14 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         const handlePlayerClickCapture = (e: MouseEvent) => {
           if (Date.now() - lastTouchTimestamp < 600) {
             const target = e.target as HTMLElement | null;
-            // 버튼, 하단/상단 컨트롤바, 모달 등의 직접 클릭은 통과시킴
             if (
               target &&
               target.closest(
-                ".art-mobile-center-btn, .art-bottom, .art-top, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, button, input, a"
+                ".art-mobile-center-btn, .art-netflix-lock-btn, .art-netflix-unlock-pill, .art-bottom, .art-top, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, button, input, a"
               )
             ) {
               return;
             }
-            // 비디오 화면 빈칸에 떨어지는 합성 클릭은 차단(Artplayer의 click 토글 방지)
             e.stopPropagation();
             e.preventDefault();
           }
@@ -3091,13 +3210,10 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
 
         // ==========================================
         // 🌟 데스크톱 (PC / 마우스) 환경 전용 핸들러
-        // 1. 더블클릭 시 무조건 전체화면 토글만 동작 (탐색 제외)
-        // 2. 모바일 터치로 인한 가짜 dblclick은 100% 원천 차단
         // ==========================================
         let desktopWasPlaying = false;
 
         const handlePlayerDblClick = (e: MouseEvent) => {
-          // 🌟 모바일 터치 후 1000ms 이내에 발생하는 합성 dblclick은 무조건 차단! (모바일 더블터치 전체화면 방지)
           if (Date.now() - lastTouchTimestamp < 1000) {
             e.stopPropagation();
             e.preventDefault();
@@ -3108,16 +3224,14 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
           if (!target) return;
           if (
             target.closest(
-              ".art-bottom, .art-controls, .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, button, a, input, .player-settings-modal-root"
+              ".art-bottom, .art-controls, .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, button, a, input, .player-settings-modal-root"
             )
           ) {
             return;
           }
 
-          // 🌟 데스크톱 더블클릭: 무조건 전체화면 토글! (탐색은 절대로 발생하지 않음)
           art.fullscreen = !art.fullscreen;
 
-          // 1번째 클릭으로 인해 비디오 재생/정지 상태가 바뀐 경우 원래 상태로 복원
           setTimeout(() => {
             if (art && art.video) {
               if (desktopWasPlaying && art.video.paused && lastPlayingStateRef.current === true) {
@@ -3137,17 +3251,22 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
         };
 
         // ==========================================
-        // 🌟 모바일 상태바 중앙 컨트롤 이벤트 바인딩
-        // (뒤로 탐색, 재생/일시정지, 앞으로 탐색)
+        // 🌟 넷플릭스 모바일 중앙 컨트롤 & 화면 잠금 이벤트 바인딩
+        // (원탭 즉시 ±10초 탐색, 중앙 재생/일시정지, 화면 잠금/해제)
         // ==========================================
         let cleanupCenterControls: (() => void) | null = null;
         const bindMobileCenterControls = () => {
           const doc = (art.template.$player as HTMLElement)?.ownerDocument || document;
+          const playerEl = art.template.$player as HTMLElement;
           const btnSeekBack = doc.getElementById("mobile-seek-backward");
           const btnSeekFwd = doc.getElementById("mobile-seek-forward");
           const btnPlay = doc.getElementById("mobile-center-play");
           const iconPlay = doc.getElementById("mobile-icon-play");
           const iconPause = doc.getElementById("mobile-icon-pause");
+          const btnLock = doc.getElementById("mobile-screen-lock-btn");
+          const unlockOverlay = doc.getElementById("mobile-screen-unlock-overlay");
+          const btnUnlockPill = doc.getElementById("mobile-screen-unlock-pill");
+          const unlockText = doc.getElementById("mobile-screen-unlock-text");
 
           const updatePlayStateIcons = () => {
             if (!iconPlay || !iconPause || !art.video) return;
@@ -3160,44 +3279,23 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             }
           };
 
-          let lastButtonTap: { side: "left" | "right"; time: number } | null = null;
-          const handleSeekButton = (e: Event, side: "left" | "right") => {
-            const click = e as PointerEvent;
-            const pointerType = click.pointerType || lastPointerType;
-            const isTouch = click.detail !== 0 && pointerType !== "mouse" && (
-              pointerType === "touch" || Date.now() - lastTouchTimestamp < 600 ||
-              window.matchMedia?.("(pointer: coarse)").matches
-            );
-            if (!isTouch) {
-              lastButtonTap = null;
-              executeSeekWithAccumulation(side);
-              return;
-            }
-            const now = Date.now();
-            if (lastButtonTap?.side === side && now - lastButtonTap.time < 380) {
-              lastButtonTap = null;
-              executeSeekWithAccumulation(side);
-            } else {
-              lastButtonTap = { side, time: now };
-              if (art.controls) (art.controls as any).timer = now;
-            }
-          };
-
+          // 🌟 넷플릭스 표준: 중앙 [↺ 10] / [10 ↻] 버튼은 1번만 탭해도 즉시 탐색 실행!
           const onSeekBack = (e: Event) => {
             e.stopPropagation();
             e.preventDefault();
-            handleSeekButton(e, "left");
+            executeSeekWithAccumulation("left", true);
           };
 
           const onSeekFwd = (e: Event) => {
             e.stopPropagation();
             e.preventDefault();
-            handleSeekButton(e, "right");
+            executeSeekWithAccumulation("right", true);
           };
 
           const onTogglePlay = (e: Event) => {
             e.stopPropagation();
             e.preventDefault();
+            if (isScreenLocked) return;
             art.toggle();
             if (art.controls) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3205,9 +3303,49 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             }
           };
 
+          const onLockScreen = (e: Event) => {
+            e.stopPropagation();
+            e.preventDefault();
+            isScreenLocked = true;
+            unlockConfirmedTap = false;
+            if (playerEl) playerEl.classList.add("is-screen-locked");
+            if (art.controls) art.controls.show = false;
+            if (unlockOverlay) {
+              if (unlockText) unlockText.textContent = "화면 잠금됨 • 해제하려면 탭하세요";
+              unlockOverlay.classList.add("show-unlock-prompt");
+              if (unlockPromptTimer) clearTimeout(unlockPromptTimer);
+              unlockPromptTimer = setTimeout(() => {
+                unlockOverlay.classList.remove("show-unlock-prompt");
+              }, 2200);
+            }
+          };
+
+          const onUnlockPillClick = (e: Event) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (!unlockConfirmedTap) {
+              unlockConfirmedTap = true;
+              if (unlockText) unlockText.textContent = "🔓 잠금 해제하시겠습니까? (한 번 더 탭)";
+              if (unlockPromptTimer) clearTimeout(unlockPromptTimer);
+              unlockPromptTimer = setTimeout(() => {
+                unlockConfirmedTap = false;
+                if (unlockOverlay) unlockOverlay.classList.remove("show-unlock-prompt");
+              }, 3500);
+              return;
+            }
+            isScreenLocked = false;
+            unlockConfirmedTap = false;
+            if (playerEl) playerEl.classList.remove("is-screen-locked");
+            if (unlockOverlay) unlockOverlay.classList.remove("show-unlock-prompt");
+            if (art.controls) art.controls.show = true;
+            if (art.notice) art.notice.show = "🔓 화면 잠금이 해제되었습니다.";
+          };
+
           if (btnSeekBack) btnSeekBack.addEventListener("click", onSeekBack);
           if (btnSeekFwd) btnSeekFwd.addEventListener("click", onSeekFwd);
           if (btnPlay) btnPlay.addEventListener("click", onTogglePlay);
+          if (btnLock) btnLock.addEventListener("click", onLockScreen);
+          if (btnUnlockPill) btnUnlockPill.addEventListener("click", onUnlockPillClick);
 
           art.on("play", updatePlayStateIcons);
           art.on("pause", updatePlayStateIcons);
@@ -3223,6 +3361,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             if (btnSeekBack) btnSeekBack.removeEventListener("click", onSeekBack);
             if (btnSeekFwd) btnSeekFwd.removeEventListener("click", onSeekFwd);
             if (btnPlay) btnPlay.removeEventListener("click", onTogglePlay);
+            if (btnLock) btnLock.removeEventListener("click", onLockScreen);
+            if (btnUnlockPill) btnUnlockPill.removeEventListener("click", onUnlockPillClick);
             art.off("play", updatePlayStateIcons);
             art.off("pause", updatePlayStateIcons);
           };
@@ -3232,11 +3372,16 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
 
         const playerEl = art.template.$player as HTMLElement;
         if (playerEl) {
-          // A browser can emit both events for one tap. Subscribe to only one family.
           if (typeof window.PointerEvent !== "undefined") {
+            playerEl.addEventListener("pointerdown", handlePointerDown);
+            playerEl.addEventListener("pointermove", handlePointerMove);
             playerEl.addEventListener("pointerup", handlePointerUp);
+            playerEl.addEventListener("pointercancel", stopLongPressSpeed);
           } else {
+            playerEl.addEventListener("touchstart", handleTouchStart, { passive: true });
+            playerEl.addEventListener("touchmove", handleTouchMove, { passive: true });
             playerEl.addEventListener("touchend", handleTouchEnd, { passive: true });
+            playerEl.addEventListener("touchcancel", stopLongPressSpeed, { passive: true });
           }
           playerEl.addEventListener("click", handlePlayerClickCapture, { capture: true });
           playerEl.addEventListener("dblclick", handlePlayerDblClick, { capture: true });
@@ -3245,15 +3390,23 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
 
         cleanupDoubleTap = () => {
           if (playerEl) {
+            playerEl.removeEventListener("pointerdown", handlePointerDown);
+            playerEl.removeEventListener("pointermove", handlePointerMove);
             playerEl.removeEventListener("pointerup", handlePointerUp);
+            playerEl.removeEventListener("pointercancel", stopLongPressSpeed);
+            playerEl.removeEventListener("touchstart", handleTouchStart);
+            playerEl.removeEventListener("touchmove", handleTouchMove);
             playerEl.removeEventListener("touchend", handleTouchEnd);
+            playerEl.removeEventListener("touchcancel", stopLongPressSpeed);
             playerEl.removeEventListener("click", handlePlayerClickCapture, { capture: true });
             playerEl.removeEventListener("dblclick", handlePlayerDblClick, { capture: true });
             playerEl.removeEventListener("mousedown", handlePlayerMouseDown);
           }
+          stopLongPressSpeed();
           if (touchTapTimer) clearTimeout(touchTapTimer);
           if (resetSeekTimer) clearTimeout(resetSeekTimer);
           if (rippleHideTimer) clearTimeout(rippleHideTimer);
+          if (unlockPromptTimer) clearTimeout(unlockPromptTimer);
           if (cleanupCenterControls) cleanupCenterControls();
         };
 

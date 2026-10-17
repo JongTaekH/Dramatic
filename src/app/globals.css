@@ -418,9 +418,25 @@ video::cue {
 }
 
 /* ========================================================
-   모바일 상태바 활성화 시 중앙 컨트롤 (유튜브 모바일 스타일)
-   - 동그란 배경 없음, 반투명 화이트 아이콘 + 드롭 섀도우
+   넷플릭스 모바일 앱 스타일 화면 터치 컨트롤 오버레이
+   - 원탭 시 반투명 딤(Dim) + 중앙 원형 [↺ 10] [▶/⏸] [10 ↻] 버튼
+   - 화면 잠금(Lock) 모드 + 길게 누르기(Long Press) 2.0x 배속 배지
    ======================================================== */
+.art-video-player.art-hover.art-mobile::before,
+.art-video-player.art-hover.is-touch-device::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.56) 100%);
+  pointer-events: none;
+  z-index: 25;
+  transition: opacity 0.2s ease;
+}
+
+.art-video-player.is-screen-locked::before {
+  display: none !important;
+}
+
 .art-mobile-center-controls {
   position: absolute !important;
   top: 50% !important;
@@ -429,103 +445,222 @@ video::cue {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 52px !important;
+  gap: clamp(36px, 11vw, 76px) !important;
   opacity: 0 !important;
   pointer-events: none !important;
   z-index: 36 !important;
-  transition: opacity 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  transition: opacity 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
 }
 
 /* 데스크톱(마우스 환경)에서는 중앙 오버레이 컨트롤 완전 숨김 */
 @media (hover: hover) and (pointer: fine) {
-  .art-video-player:not(.art-mobile):not(.is-touch-device) .art-mobile-center-controls {
+  .art-video-player:not(.art-mobile):not(.is-touch-device) .art-mobile-center-controls,
+  .art-video-player:not(.art-mobile):not(.is-touch-device) .art-netflix-lock-bar {
     display: none !important;
   }
 }
 
-/* 모바일 또는 터치 디바이스에서 상태바(art-hover)가 켜졌을 때만 중앙 컨트롤 노출 */
-.art-video-player.art-hover.art-mobile .art-mobile-center-controls,
-.art-video-player.art-hover.is-touch-device .art-mobile-center-controls {
+/* 모바일 또는 터치 디바이스에서 상태바(art-hover)가 켜졌을 때만 중앙 컨트롤 노출 (잠금 상태 제외) */
+.art-video-player.art-hover.art-mobile:not(.is-screen-locked) .art-mobile-center-controls,
+.art-video-player.art-hover.is-touch-device:not(.is-screen-locked) .art-mobile-center-controls {
   opacity: 1 !important;
   pointer-events: auto !important;
   transform: translate(-50%, -50%) scale(1) !important;
 }
 
-.art-video-player:not(.art-hover) .art-mobile-center-controls {
+.art-video-player:not(.art-hover) .art-mobile-center-controls,
+.art-video-player.is-screen-locked .art-mobile-center-controls {
   opacity: 0 !important;
   pointer-events: none !important;
   transform: translate(-50%, -50%) scale(0.92) !important;
 }
 
-/* 중앙 공통 버튼: 동그란 배경 완전 제거, 반투명 + 부드러운 드롭 섀도우 */
+/* 중앙 공통 버튼: 넷플릭스 스타일 선명한 화이트 + 터치 피드백 */
 .art-mobile-center-btn {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  color: rgba(255, 255, 255, 0.88) !important;
+  background: rgba(0, 0, 0, 0.28) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45) !important;
+  border-radius: 9999px !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  color: #ffffff !important;
   cursor: pointer !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   padding: 0 !important;
   margin: 0 !important;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.75)) !important;
-  transition: transform 0.12s ease, opacity 0.12s ease !important;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.8)) !important;
+  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.15s ease !important;
   user-select: none !important;
   -webkit-tap-highlight-color: transparent !important;
+  touch-action: manipulation !important;
 }
 
 .art-mobile-center-btn:active {
-  transform: scale(0.88) !important;
-  opacity: 0.55 !important;
+  transform: scale(0.86) !important;
+  background: rgba(255, 255, 255, 0.22) !important;
 }
 
-/* 앞뒤 탐색 버튼 (48x48, 세로 정렬 아이콘+초수) */
+/* 넷플릭스 원형 ↺ 10 / 10 ↻ 버튼 (58x58) */
 .art-mobile-seek-backward,
 .art-mobile-seek-forward {
-  width: 48px !important;
-  height: 48px !important;
+  width: 58px !important;
+  height: 58px !important;
 }
 
 .art-mobile-seek-inner {
   position: relative !important;
   display: flex !important;
-  flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
   width: 100% !important;
   height: 100% !important;
-  gap: 1px !important;
 }
 
 .art-mobile-seek-inner svg {
-  color: rgba(255, 255, 255, 0.88) !important;
-  width: 26px !important;
-  height: 26px !important;
+  color: #ffffff !important;
+  width: 42px !important;
+  height: 42px !important;
 }
 
 .art-mobile-seek-sec {
-  font-size: 10px !important;
-  font-weight: 800 !important;
+  position: absolute !important;
+  top: 53% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
   line-height: 1 !important;
-  color: rgba(255, 255, 255, 0.92) !important;
-  letter-spacing: -0.02em !important;
+  color: #ffffff !important;
+  letter-spacing: -0.03em !important;
   pointer-events: none !important;
 }
 
-/* 재생 / 일시정지 중앙 버튼 (52x52, 깔끔한 반투명 아이콘) */
+/* 재생 / 일시정지 중앙 메인 버튼 (68x68) */
 .art-mobile-center-play {
-  width: 52px !important;
-  height: 52px !important;
+  width: 68px !important;
+  height: 68px !important;
 }
 
 .art-mobile-center-play svg {
-  color: rgba(255, 255, 255, 0.92) !important;
-  width: 38px !important;
-  height: 38px !important;
+  color: #ffffff !important;
+  width: 42px !important;
+  height: 42px !important;
+}
+
+/* 넷플릭스 화면 잠금(Screen Lock) 컨트롤 및 해제 배너 */
+.art-netflix-lock-bar {
+  position: absolute !important;
+  top: max(14px, env(safe-area-inset-top, 0px)) !important;
+  right: max(16px, env(safe-area-inset-right, 0px)) !important;
+  z-index: 42 !important;
+  pointer-events: none !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.art-netflix-lock-btn {
+  pointer-events: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 9999px !important;
+  background: rgba(15, 23, 42, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  opacity: 0 !important;
+  transform: translateY(-4px) !important;
+  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.15s ease !important;
+  touch-action: manipulation !important;
+}
+
+.art-video-player.art-hover.art-mobile:not(.is-screen-locked) .art-netflix-lock-btn,
+.art-video-player.art-hover.is-touch-device:not(.is-screen-locked) .art-netflix-lock-btn {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+.art-video-player:not(.art-hover) .art-netflix-lock-btn,
+.art-video-player.is-screen-locked .art-netflix-lock-btn {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 화면 잠금 상태에서 화면 탭 시 나타나는 하단 중앙 '화면 잠금 해제' 필 버튼 */
+.art-netflix-unlock-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 45 !important;
+  display: none !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  padding-bottom: max(36px, calc(env(safe-area-inset-bottom, 0px) + 28px)) !important;
+  pointer-events: none !important;
+}
+
+.art-video-player.is-screen-locked .art-netflix-unlock-overlay.show-unlock-prompt {
+  display: flex !important;
+}
+
+.art-netflix-unlock-pill {
+  pointer-events: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 20px !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #111827 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7) !important;
+  border: none !important;
+  cursor: pointer !important;
+  touch-action: manipulation !important;
+  animation: doubleTapPulse 0.25s ease !important;
+}
+
+.art-video-player.is-screen-locked .art-bottom,
+.art-video-player.is-screen-locked .art-top,
+.art-video-player.is-screen-locked .art-settings,
+.art-video-player.is-screen-locked .art-contextmenus {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 길게 누르기(Long Press) 2.0x 고속 재생 배지 */
+.art-longpress-speed-badge {
+  position: absolute !important;
+  top: max(18px, calc(env(safe-area-inset-top, 0px) + 12px)) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 44 !important;
+  display: none !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 14px !important;
+  border-radius: 9999px !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  border: 1px solid rgba(168, 85, 247, 0.55) !important;
+  color: #ffffff !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6) !important;
+  pointer-events: none !important;
+}
+
+.art-longpress-speed-badge.active {
+  display: inline-flex !important;
 }
 
 /* 모바일 및 터치 환경에서 기본 .art-state(중앙 정지 아이콘) 숨김 */
@@ -533,4 +668,5 @@ video::cue {
 .art-video-player.is-touch-device .art-state {
   display: none !important;
 }
+
 

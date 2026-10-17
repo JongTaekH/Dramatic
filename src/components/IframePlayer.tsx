@@ -143,42 +143,51 @@ export default function IframePlayer({
 
   const lastIframeTouchTime = useRef(0);
   const lastIframeTouchSide = useRef<"left" | "right" | null>(null);
+  const cumulativeSkipRef = useRef<{ side: "left" | "right" | null; sec: number; lastTime: number }>({
+    side: null,
+    sec: 0,
+    lastTime: 0,
+  });
+
+  const executeCumulativeIframeSeek = useCallback((side: "left" | "right") => {
+    const now = Date.now();
+    if (cumulativeSkipRef.current.side === side && now - cumulativeSkipRef.current.lastTime < 750) {
+      cumulativeSkipRef.current.sec += 10;
+    } else {
+      cumulativeSkipRef.current.side = side;
+      cumulativeSkipRef.current.sec = 10;
+    }
+    cumulativeSkipRef.current.lastTime = now;
+
+    seekVideoBy(side === "left" ? -10 : 10);
+    triggerSkipRipple(side, cumulativeSkipRef.current.sec);
+  }, [seekVideoBy, triggerSkipRipple]);
 
   const handleIframeDoubleTap = useCallback((side: "left" | "right") => {
     const now = Date.now();
     const diff = now - lastIframeTouchTime.current;
-    if (lastIframeTouchSide.current === side && diff < 380) {
-      seekVideoBy(side === "left" ? -10 : 10);
-      triggerSkipRipple(side, 10);
+    if (lastIframeTouchSide.current === side && diff < 320) {
+      executeCumulativeIframeSeek(side);
       lastIframeTouchTime.current = 0;
       lastIframeTouchSide.current = null;
     } else {
       lastIframeTouchTime.current = now;
       lastIframeTouchSide.current = side;
       setTimeout(() => {
-        if (lastIframeTouchSide.current === side && Date.now() - lastIframeTouchTime.current >= 380) {
+        if (lastIframeTouchSide.current === side && Date.now() - lastIframeTouchTime.current >= 320) {
           lastIframeTouchSide.current = null;
         }
-      }, 380);
+      }, 320);
     }
-  }, [seekVideoBy, triggerSkipRipple]);
+  }, [executeCumulativeIframeSeek]);
 
   const lastSeekButtonTouch = useRef(0);
   const lastSeekPointerType = useRef("");
-  const handleSeekButtonClick = useCallback((event: React.MouseEvent<HTMLButtonElement>, side: "left" | "right") => {
-    const pointerType = (event.nativeEvent as PointerEvent).pointerType || lastSeekPointerType.current;
-    const isTouch = event.detail !== 0 && pointerType !== "mouse" && (
-      pointerType === "touch" || Date.now() - lastSeekButtonTouch.current < 600 ||
-      window.matchMedia("(pointer: coarse)").matches
-    );
-    if (isTouch) {
-      handleIframeDoubleTap(side);
-    } else {
-      lastIframeTouchTime.current = 0;
-      lastIframeTouchSide.current = null;
-      seekVideoBy(side === "left" ? -10 : 10);
-    }
-  }, [handleIframeDoubleTap, seekVideoBy]);
+  const handleSeekButtonClick = useCallback((_event: React.MouseEvent<HTMLButtonElement>, side: "left" | "right") => {
+    lastIframeTouchTime.current = 0;
+    lastIframeTouchSide.current = null;
+    executeCumulativeIframeSeek(side);
+  }, [executeCumulativeIframeSeek]);
 
   useEffect(() => {
     mountedRef.current = true;
