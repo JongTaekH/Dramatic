@@ -69,10 +69,10 @@ export default function Navbar() {
     <>
       <header className="sticky top-0 z-40 w-full border-b border-[#B3B3B3]/20 bg-[#2B2B2B]/95 backdrop-blur-md safe-top">
         <div className="mx-auto flex h-16 min-w-0 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 gap-2 lg:gap-3 safe-x">
-          {/* Logo (DramaLand Wordmark) */}
+          {/* Logo (Dramas Wordmark) */}
           <Link href="/" className="flex items-center shrink-0 group py-1">
             <span className="text-xl sm:text-2xl font-black tracking-tight text-[#FFFFFF] transition group-hover:text-[#D4D4D4]">
-              DramaLand
+              Dramas
             </span>
           </Link>
 
@@ -205,7 +205,7 @@ export default function Navbar() {
           </div>
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-2 safe-x lg:hidden">
-          <span className="text-xs text-[#B3B3B3]">DramaLand를 앱으로 이용하세요</span>
+          <span className="text-xs text-[#B3B3B3]">Dramas를 앱으로 이용하세요</span>
           <PwaInstallButton />
         </div>
       </header>

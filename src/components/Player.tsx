@@ -495,7 +495,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
             window.history.replaceState(null, "", nextUrl);
           } catch {}
         }
-        document.title = `${animeTitle} ${epTitle} - DramaLand`;
+        document.title = `${animeTitle} ${epTitle} - Dramas`;
 
         // 5. 상태 및 ref 즉각 동기화 (비동기 렌더 지연 없이 이벤트 핸들러가 즉시 새 회차 참조)
         currentEpRef.current = targetEp;

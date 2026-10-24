@@ -6,7 +6,7 @@ import ProfileForm from "./ProfileForm";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "내 프로필 - DramaLand",
+  title: "내 프로필 - Dramas",
 };
 
 export default async function ProfilePage() {

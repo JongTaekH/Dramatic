@@ -13,13 +13,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "DramaLand",
-  description: "DramaLand - 고화질 한국 드라마 스트리밍 플레이어",
+  title: "Dramas",
+  description: "Dramas - 고화질 한국 드라마 스트리밍 플레이어",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "DramaLand",
+    title: "Dramas",
   },
   icons: {
     icon: [

@@ -159,7 +159,7 @@ export default function PwaRegister({ children }: { children?: ReactNode }) {
               <Download className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-semibold text-white">DramaLand 앱 설치</h4>
+              <h4 className="text-sm font-semibold text-white">Dramas 앱 설치</h4>
               <p className="mt-1 text-xs leading-relaxed text-[#B3B3B3]" aria-live="polite">
                 {error && <span className="mb-1 block text-white">{error}</span>}
                 {deferredPrompt

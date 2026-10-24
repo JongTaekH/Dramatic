@@ -5,7 +5,7 @@ import SetupForm from "./SetupForm";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "초기 마스터 관리자 설정 - DramaLand",
+  title: "초기 마스터 관리자 설정 - Dramas",
 };
 
 export default async function SetupPage() {

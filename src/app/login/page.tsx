@@ -6,7 +6,7 @@ import LoginForm from "./LoginForm";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "로그인 - DramaLand",
+  title: "로그인 - Dramas",
 };
 
 export default async function LoginPage() {
@@ -27,7 +27,7 @@ export default async function LoginPage() {
         {/* 상단 브랜딩 */}
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-black tracking-tight text-[#FFFFFF]">
-            DramaLand
+            Dramas
           </h1>
           <p className="mt-2 text-xs font-medium text-[#B3B3B3]">시스템 로그인</p>
         </div>

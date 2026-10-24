@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "DramaLand",
-    short_name: "DramaLand",
-    description: "DramaLand - 고화질 한국 드라마 스트리밍 플레이어",
+    name: "Dramas",
+    short_name: "Dramas",
+    description: "Dramas - 고화질 한국 드라마 스트리밍 플레이어",
     start_url: "/",
     display: "standalone",
     background_color: "#2B2B2B",

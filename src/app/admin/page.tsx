@@ -5,7 +5,7 @@ import AdminDashboard from "./AdminDashboard";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "계정 관리 - DramaLand",
+  title: "계정 관리 - Dramas",
 };
 
 export default async function AdminPage() {
