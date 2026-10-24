@@ -510,7 +510,7 @@ export default function IframePlayer({
               className="absolute inset-0 h-full w-full border-0 z-0"
               allow={`autoplay; fullscreen; encrypted-media; picture-in-picture${supportsDocumentPip ? " 'none'" : ""}`}
               sandbox="allow-scripts allow-same-origin allow-fullscreen allow-forms allow-presentation"
-              referrerPolicy="no-referrer-when-downgrade"
+              referrerPolicy="no-referrer"
               allowFullScreen
             />
           ) : (
