@@ -28,6 +28,7 @@ test('external fallback iframe does not send the application origin as Referer',
     const frame = dom.window.document.querySelector('iframe');
     assert.ok(frame, 'fallback player must be mounted');
     assert.equal(frame.getAttribute('referrerpolicy'), 'no-referrer');
+    assert.ok(!frame.getAttribute('sandbox').split(' ').includes('allow-fullscreen'));
     assert.equal(new URL(frame.src).searchParams.get('sig'), 'test');
   } finally {
     await React.act(async () => root.unmount());

@@ -123,6 +123,7 @@ export interface PlayerProps {
   initialSubtitle?: any;
   initialCreator?: string;
   initialSubUrl?: string;
+  onRefreshStream?: (episodeNumber?: number) => void;
 }
 
 declare global {
@@ -136,7 +137,7 @@ declare global {
   }
 }
 
-function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }) {
+function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumber?: number) => void }) {
 
   const {
     animeId,
@@ -2527,13 +2528,14 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
                   const isNotFound =
                     data.response?.code === 404 ||
                     (data.details === "manifestLoadError" && data.response?.code === 404);
-                  if (isNotFound) {
+                  const sourceExpired = props.onRefreshStream && [401, 403, 410].includes(data.response?.code);
+                  if (isNotFound || sourceExpired) {
                     stopColdLoadingTimer();
-                    if (props.embedUrl || (props.serverSources && props.serverSources.length > 0)) {
-                      artInstance.notice.show = "스트림이 삭제되어 원본 HD 플레이어로 즉시 전환합니다...";
+                    if (props.onRefreshStream || props.embedUrl || (props.serverSources && props.serverSources.length > 0)) {
+                      artInstance.notice.show = "최신 영상 주소로 다시 연결합니다...";
                       setTimeout(() => {
                         stopPlayerImmediately();
-                        props.onFallbackToIframe?.();
+                        props.onFallbackToIframe?.(currentEpRef.current);
                       }, 1000);
                     } else {
                       artInstance.notice.show = "해당 회차 영상 소스가 삭제되어 재생할 수 없습니다.";
@@ -2556,11 +2558,11 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: () => void }
                       }, delay);
                     } else {
                       stopColdLoadingTimer();
-                      if (props.embedUrl || (props.serverSources && props.serverSources.length > 0)) {
-                        artInstance.notice.show = "스트림 연결 지연으로 원본 HD 플레이어로 자동 전환합니다...";
+                      if (props.onRefreshStream || props.embedUrl || (props.serverSources && props.serverSources.length > 0)) {
+                        artInstance.notice.show = "최신 영상 주소로 다시 연결합니다...";
                         setTimeout(() => {
                           stopPlayerImmediately();
-                          props.onFallbackToIframe?.();
+                          props.onFallbackToIframe?.(currentEpRef.current);
                         }, 1200);
                       } else {
                         artInstance.notice.show = "영상 스트림 연결이 지연되고 있습니다. 잠시 후 새로고침해 주세요.";
@@ -4635,7 +4637,10 @@ export default function Player(props: PlayerProps) {
   return (
     <ArtPlayerInner
       {...props}
-      onFallbackToIframe={() => setCurrentStreamType("iframe")}
+      onFallbackToIframe={(episodeNumber) => {
+        if (props.onRefreshStream) props.onRefreshStream(episodeNumber);
+        else setCurrentStreamType("iframe");
+      }}
     />
   );
 }

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getProviderByAnimeId } from "@/lib/providers";
 import { getSessionUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) {
@@ -32,6 +35,12 @@ export async function GET(request: NextRequest) {
   }
 
   const streamInfo = await provider.getEpisodeStream(watchUrl);
+  if (!streamInfo?.m3u8_url) {
+    return NextResponse.json(
+      { success: false, code: "STREAM_UNAVAILABLE", message: "영상 서버에서 재생 주소를 가져오지 못했습니다. 다시 시도해 주세요." },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   const playerRef = streamInfo?.player_url || "";
   const rawM3u8 = streamInfo?.m3u8_url || "";
   const rawVtt = streamInfo?.vtt_url || "";

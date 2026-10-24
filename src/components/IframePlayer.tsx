@@ -509,9 +509,8 @@ export default function IframePlayer({
               title="Drama Player"
               className="absolute inset-0 h-full w-full border-0 z-0"
               allow={`autoplay; fullscreen; encrypted-media; picture-in-picture${supportsDocumentPip ? " 'none'" : ""}`}
-              sandbox="allow-scripts allow-same-origin allow-fullscreen allow-forms allow-presentation"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
               referrerPolicy="no-referrer"
-              allowFullScreen
             />
           ) : (
             <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-black/90 p-6 text-center">

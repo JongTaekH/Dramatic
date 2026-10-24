@@ -909,11 +909,11 @@ export async function resolveTvwikiEpisodeStream(
     if (pRes.ok && pRes.body) {
       // Current players publish a JSON configuration; the URL may end in .html
       // even though it serves an HLS playlist. Do not infer media type from suffix.
-      const configMatch = pRes.body.match(/window\.TVP_CONFIG\s*=\s*(\{[^\n]*?\})\s*;/);
+      const configMatch = pRes.body.match(/window\.TVP_CONFIG\s*=\s*(\{[\s\S]*?\})\s*;/);
       if (configMatch) {
         try {
           const config = JSON.parse(configMatch[1]);
-          if (config.mode === "direct" && typeof config.src === "string" && config.src) {
+          if ((config.mode === "direct" || config.mode === "relay") && typeof config.src === "string" && config.src) {
             const source = new URL(config.src, embedUrl);
             if (["https:", "http:"].includes(source.protocol)) m3u8Url = source.toString();
           }
@@ -1040,7 +1040,7 @@ export async function resolveTvwikiEpisodeStream(
     success: true,
     m3u8_url: m3u8Url,
     vtt_url: vttUrl,
-    player_url: playerOrigin ? `${playerOrigin}/` : embedUrl,
+    player_url: embedUrl,
     embed_url: embedUrl,
     stream_type: m3u8Url ? "m3u8" : "iframe",
     server_sources: [
