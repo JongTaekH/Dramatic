@@ -835,13 +835,74 @@ export async function resolveTvwikiEpisodeStream(
   });
   // Replace host in watchUrl with current baseUrl in case domain changed
   let targetEpUrl = watchUrl;
+  let episodeApiTarget: { boTable: string; wrId: string; epIdx: string } | null = null;
   try {
     const parsedWatch = new URL(watchUrl, baseUrl);
     const parsedBase = new URL(baseUrl);
     parsedWatch.protocol = parsedBase.protocol;
     parsedWatch.host = parsedBase.host;
     targetEpUrl = parsedWatch.toString();
+    const match = parsedWatch.pathname.match(/^\/(drama|old_drama)\/(\d+)\/(\d+)\/?$/);
+    if (match) {
+      episodeApiTarget = { boTable: match[1], wrId: match[2], epIdx: match[3] };
+    }
   } catch {}
+
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, "");
+
+  // Fast path: TVWIKI's own /bbs/get_episode.php issues a fresh signed HLS URL
+  // directly from the main site without contacting player.bunny-frame.online
+  // (which blocks cloud/datacenter IPs with Cloudflare 403).
+  if (episodeApiTarget) {
+    const episodeApiUrl = new URL("/bbs/get_episode.php", `${cleanBaseUrl}/`);
+    episodeApiUrl.searchParams.set("bo_table", episodeApiTarget.boTable);
+    episodeApiUrl.searchParams.set("wr_id", episodeApiTarget.wrId);
+    episodeApiUrl.searchParams.set("ep_idx", episodeApiTarget.epIdx);
+    try {
+      const apiRes = await fetcher(episodeApiUrl.toString(), {
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          Referer: targetEpUrl,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        timeoutMs: 6000,
+      });
+      if (apiRes.ok && apiRes.body) {
+        const apiJson = JSON.parse(apiRes.body);
+        const rawHls = apiJson?.episode?.hls_url;
+        if (apiJson?.success && typeof rawHls === "string" && rawHls.trim()) {
+          const resolvedHls = new URL(rawHls.trim(), `${cleanBaseUrl}/`);
+          if (["https:", "http:"].includes(resolvedHls.protocol)) {
+            let vttUrl = "";
+            const rawSub =
+              (typeof apiJson.episode.vtt === "string" && apiJson.episode.vtt.trim()) ||
+              (typeof apiJson.episode.srt === "string" && apiJson.episode.srt.trim()) ||
+              "";
+            if (rawSub) {
+              try {
+                const resolvedSub = new URL(rawSub, `${cleanBaseUrl}/`);
+                if (["https:", "http:"].includes(resolvedSub.protocol)) {
+                  vttUrl = resolvedSub.toString();
+                }
+              } catch {}
+            }
+            const defaultPlayerRef = "https://player.bunny-frame.online/";
+            return {
+              success: true,
+              m3u8_url: resolvedHls.toString(),
+              vtt_url: vttUrl,
+              player_url: defaultPlayerRef,
+              embed_url: "",
+              stream_type: "m3u8",
+              server_sources: [{ label: "TVWIKI 고화질 서버", player_url: defaultPlayerRef }],
+              link_next: "",
+              link_pre: "",
+            };
+          }
+        }
+      }
+    } catch {}
+  }
 
   let epRes: ResilientFetchResponse;
   try {

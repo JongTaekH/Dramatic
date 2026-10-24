@@ -26,8 +26,8 @@ export default function BaseUrlSettingsModal({
   onUpdated,
 }: BaseUrlSettingsModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [currentUrl, setCurrentUrl] = useState<string>("https://tvwiki54.net");
-  const [defaultUrl, setDefaultUrl] = useState<string>("https://tvwiki54.net");
+  const [currentUrl, setCurrentUrl] = useState<string>("https://tvwiki55.net");
+  const [defaultUrl, setDefaultUrl] = useState<string>("https://tvwiki55.net");
   const [inputUrl, setInputUrl] = useState<string>("");
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);

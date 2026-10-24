@@ -30,6 +30,35 @@ test('blocked access response includes the original episode and truthful status'
   assert.match(data.message, /차단/);
 });
 
+test('TVWIKI get_episode.php resolves direct HLS without contacting external player servers', async () => {
+  const calls = [];
+  const fetcher = async (url, options) => {
+    calls.push({ url, options });
+    if (url.includes('/bbs/get_episode.php')) {
+      const parsed = new URL(url);
+      assert.equal(parsed.searchParams.get('bo_table'), 'drama');
+      assert.equal(parsed.searchParams.get('wr_id'), '12442');
+      assert.equal(parsed.searchParams.get('ep_idx'), '406786118');
+      assert.equal(options.headers.Referer, 'https://tvwiki55.net/drama/12442/406786118');
+      return reply(JSON.stringify({
+        success: true,
+        episode: {
+          idx: 406786118,
+          hls_url: 'https://every9.poorcdn.com/v/e/66f638/c.html?token=direct&expires=123',
+          vtt: '/subtitles/ep2.vtt',
+        },
+      }));
+    }
+    return reply('Forbidden', 403);
+  };
+  const info = await provider.resolveTvwikiEpisodeStream('/drama/12442/406786118', 'https://tvwiki55.net', fetcher);
+  assert.equal(info.success, true);
+  assert.equal(info.m3u8_url, 'https://every9.poorcdn.com/v/e/66f638/c.html?token=direct&expires=123');
+  assert.equal(info.vtt_url, 'https://tvwiki55.net/subtitles/ep2.vtt');
+  assert.equal(info.player_url, 'https://player.bunny-frame.online/');
+  assert.equal(calls.length, 1);
+});
+
 test('a fresh session resolves through the player JSON API without opening its blocked HTML page', async () => {
   const calls = [];
   const fetcher = async (url, options) => {

@@ -260,7 +260,7 @@ export const getAnimeHistoryMap = getDramaHistoryMap;
 // TVWIKI Dynamic Base URL Helpers
 // ----------------------------------------------------
 
-export const DEFAULT_TVWIKI_URL = "https://tvwiki54.net";
+export const DEFAULT_TVWIKI_URL = "https://tvwiki55.net";
 export const TELEGRAM_FALLBACK_URL = "https://t.me/s/tvwiki_url";
 export const TELEGRAM_TVWIKI_URL = TELEGRAM_FALLBACK_URL;
 export const TVWIKI_STORE_HUB_URL = "https://tvwiki.store";

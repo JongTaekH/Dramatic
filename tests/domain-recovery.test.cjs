@@ -14,13 +14,15 @@ test('54 episode uses 55 session and the new TVP HLS configuration', async () =>
   const calls = [];
   const fetcher = async (url, options) => {
     calls.push({ url, options });
+    if (url.includes('/bbs/get_episode.php')) return response('unavailable', url, false);
     if (url.includes('/drama/')) return response('<iframe id="view_iframe" data-session1="{&quot;idx&quot;:123}"></iframe>', url);
     if (url.endsWith('create_session.php')) return response(JSON.stringify({ success: true, player_url: 'https://player.example/player?existing=1', t: 'a+b', sig: 's' }), url);
     return response('<script>window.TVP_CONFIG={"mode":"direct","src":"https://cdn.example/c.html?token=abc","subtitle":"https://cdn.example/sub.vtt"};</script>', url);
   };
   const info = await provider.resolveTvwikiEpisodeStream('https://tvwiki54.net/drama/1/123', 'https://tvwiki55.net', fetcher);
-  assert.equal(calls[0].url, 'https://tvwiki55.net/drama/1/123');
-  assert.equal(calls[1].url, 'https://tvwiki55.net/api/create_session.php');
+  assert.equal(calls[0].url, 'https://tvwiki55.net/bbs/get_episode.php?bo_table=drama&wr_id=1&ep_idx=123');
+  assert.equal(calls[1].url, 'https://tvwiki55.net/drama/1/123');
+  assert.equal(calls[2].url, 'https://tvwiki55.net/api/create_session.php');
   assert.equal(info.m3u8_url, 'https://cdn.example/c.html?token=abc');
   assert.equal(info.stream_type, 'm3u8');
   assert.equal(new URL(info.embed_url).searchParams.get('existing'), '1');
