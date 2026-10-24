@@ -267,6 +267,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
 
   // Episode Navigator States
   const currentEpisodes = (isDub ? dubEpisodes : subEpisodes) || [];
+  const currentEpisodesRef = useRef(currentEpisodes);
+  currentEpisodesRef.current = currentEpisodes;
 
   // Episode & Stream States (무중단 회차 전환 지원)
   const [currentEp, setCurrentEp] = useState<number>(episodeNumber);
@@ -277,8 +279,16 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
   });
   const [currentM3u8Url, setCurrentM3u8Url] = useState<string>(m3u8Url);
   const [currentVttUrl, setCurrentVttUrl] = useState<string>(defaultVttUrl || "");
-  const [currentPreEp, setCurrentPreEp] = useState<number | null>(linkPreEp ?? null);
-  const [currentNextEp, setCurrentNextEp] = useState<number | null>(linkNextEp ?? null);
+  const [currentPreEp, setCurrentPreEp] = useState<number | null>(() => {
+    if (linkPreEp != null) return linkPreEp;
+    const idx = currentEpisodes.findIndex((e) => Number(e.number) === Number(episodeNumber));
+    return idx > 0 ? currentEpisodes[idx - 1].number : null;
+  });
+  const [currentNextEp, setCurrentNextEp] = useState<number | null>(() => {
+    if (linkNextEp != null) return linkNextEp;
+    const idx = currentEpisodes.findIndex((e) => Number(e.number) === Number(episodeNumber));
+    return idx !== -1 && idx + 1 < currentEpisodes.length ? currentEpisodes[idx + 1].number : null;
+  });
 
   const currentEpRef = useRef(currentEp);
   currentEpRef.current = currentEp;
@@ -416,10 +426,31 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
   }, [setMobileLandscape]);
 
   // 무중단 다음화 / 특정 회차 전환 함수 (전체화면 유지)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prefetchedEpDataRef = useRef<{ ep: number; promise: Promise<any> } | null>(null);
+
+  const prefetchEpisodeInfo = useCallback(
+    (targetEp: number) => {
+      if (!targetEp || targetEp <= 0) return null;
+      if (prefetchedEpDataRef.current?.ep === targetEp) {
+        return prefetchedEpDataRef.current.promise;
+      }
+      const promise = fetch(
+        `/api/anime/episode_info?id=${encodeURIComponent(animeId)}&ep=${targetEp}${isDub ? "&is_dub=1" : ""}`
+      )
+        .then((r) => r.json())
+        .catch(() => null);
+      prefetchedEpDataRef.current = { ep: targetEp, promise };
+      return promise;
+    },
+    [animeId, isDub]
+  );
+
   const switchEpisode = useCallback(
     async (targetEp: number) => {
       if (isSwitchingEpRef.current || !artRef.current) return;
       isSwitchingEpRef.current = true;
+      lastPlayingStateRef.current = true;
 
       const art = artRef.current;
       try {
@@ -427,6 +458,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         doc.getElementById("art-netflix-next-card")?.classList.remove("active");
       } catch {}
       art.notice.show = `${targetEp}화 로딩 중...`;
+
+      const nextUrl = `/watch/${animeId}/${targetEp}${isDub ? "?dub=1" : ""}`;
 
       try {
         // 1. 현재 에피소드 시청 완료 기록 및 로컬 캐시 정리
@@ -466,14 +499,22 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           art.template.$subtitle.style.display = "none";
         }
 
-        // 3. 새 회차 스트림 정보 API 호출
-        const res = await fetch(
-          `/api/anime/episode_info?id=${encodeURIComponent(animeId)}&ep=${targetEp}${isDub ? "&is_dub=1" : ""}`
-        );
-        const data = await res.json();
+        // 3. 새 회차 스트림 정보 API 호출 (20초 전 프리페치 캐시 우선 사용)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any = null;
+        if (prefetchedEpDataRef.current?.ep === targetEp) {
+          data = await prefetchedEpDataRef.current.promise;
+        }
+        if (!data || !data.success || !data.proxied_m3u8) {
+          const res = await fetch(
+            `/api/anime/episode_info?id=${encodeURIComponent(animeId)}&ep=${targetEp}${isDub ? "&is_dub=1" : ""}`
+          );
+          data = await res.json();
+        }
 
-        if (!data.success || !data.proxied_m3u8) {
-          throw new Error(data.message || "새 회차 스트림 정보를 불러오지 못했습니다.");
+        if (!data || !data.success || !data.proxied_m3u8) {
+          window.location.href = nextUrl;
+          return;
         }
 
         let newM3u8: string = data.proxied_m3u8;
@@ -495,14 +536,14 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         const epTitle = data.episode_title || `${targetEp}화`;
 
         // 클라이언트 목록 기반 이전/다음 회차 번호 보정
-        const foundIdx = currentEpisodes.findIndex((e) => e.number === targetEp);
+        const eps = currentEpisodesRef.current.length > 0 ? currentEpisodesRef.current : currentEpisodes;
+        const foundIdx = eps.findIndex((e) => e.number === targetEp);
         if (foundIdx !== -1) {
-          if (newPreEp === null && foundIdx > 0) newPreEp = currentEpisodes[foundIdx - 1].number;
-          if (newNextEp === null && foundIdx + 1 < currentEpisodes.length) newNextEp = currentEpisodes[foundIdx + 1].number;
+          if (newPreEp === null && foundIdx > 0) newPreEp = eps[foundIdx - 1].number;
+          if (newNextEp === null && foundIdx + 1 < eps.length) newNextEp = eps[foundIdx + 1].number;
         }
 
         // 4. 페이지 이동 없이 브라우저 URL 갱신 (Next.js 가로채기 방지 -> 전체화면 유지)
-        const nextUrl = `/watch/${animeId}/${targetEp}${isDub ? "?dub=1" : ""}`;
         try {
           // Next.js App Router의 라우트 변경(RSC 리마운트 및 전체화면 풀림) 인터셉트 방지: __NA: true
           const nextState = { ...(window.history.state || {}), __NA: true };
@@ -547,7 +588,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         try {
           await Promise.race([
             art.switchUrl(newM3u8),
-            new Promise((resolve) => setTimeout(resolve, 4000)),
+            new Promise((resolve) => setTimeout(resolve, 2500)),
           ]);
         } catch (switchErr) {
           console.warn("[art.switchUrl non-fatal error]:", switchErr);
@@ -556,7 +597,9 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         try {
           await art.play();
         } catch {
-          // 브라우저 자동재생 정책 대비
+          try {
+            await art.video?.play();
+          } catch {}
         }
 
         if (wasFullscreen && !art.fullscreen && !document.fullscreenElement) {
@@ -2434,22 +2477,16 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             m3u8: function (video: HTMLVideoElement, url: string, artInstance: any) {
               if (Hls && Hls.isSupported()) {
                 if (artInstance.hls) {
-                  // 이미 Hls 인스턴스가 존재하면 destroy/detach하지 않고 소스만 교체
-                  // (미디어 분리로 인한 비디오 초기화 및 전체화면 풀림 방지)
+                  // 이전 HLS 인스턴스를 깔끔히 정리한 뒤 새 인스턴스로 연결하여
+                  // loadedmetadata / canplay 이벤트가 즉시 발생하고 전체화면은 그대로 유지되도록 보장
                   try {
-                    artInstance.hls.stopLoad();
-                    // PiP recovery stores an absolute position for the previous source.
-                    artInstance.hls.config.startPosition = -1;
-                    artInstance.hls.loadSource(url);
-                    artInstance.hls.startLoad();
-                    return;
+                    artInstance.hls.stopLoad?.();
+                    artInstance.hls.detachMedia?.();
+                    artInstance.hls.destroy?.();
                   } catch (e) {
-                    console.warn("[HLS loadSource error, recreating]:", e);
-                    try {
-                      artInstance.hls.destroy();
-                    } catch {}
-                    artInstance.hls = null;
+                    console.warn("[HLS cleanup error]:", e);
                   }
+                  artInstance.hls = null;
                 }
                 const hls = new Hls({
                   enableWorker: true,
@@ -2771,9 +2808,9 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                 <div class="art-mobile-center-controls">
                   <button type="button" class="art-mobile-center-btn art-mobile-seek-backward" id="mobile-seek-backward" aria-label="10초 되감기">
                     <div class="art-mobile-seek-inner">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="fill:none!important;stroke:#ffffff!important;">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" style="fill:none!important;stroke:#ffffff!important;" />
+                        <path d="M3 3v5h5" style="fill:none!important;stroke:#ffffff!important;" />
                       </svg>
                       <span class="art-mobile-seek-sec" id="mobile-seek-sec-back">${playerSettings.doubleTouchDuration || 10}</span>
                     </div>
@@ -2788,9 +2825,9 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                   </button>
                   <button type="button" class="art-mobile-center-btn art-mobile-seek-forward" id="mobile-seek-forward" aria-label="10초 빨리감기">
                     <div class="art-mobile-seek-inner">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                        <path d="M21 3v5h-5" />
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="fill:none!important;stroke:#ffffff!important;">
+                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" style="fill:none!important;stroke:#ffffff!important;" />
+                        <path d="M21 3v5h-5" style="fill:none!important;stroke:#ffffff!important;" />
                       </svg>
                       <span class="art-mobile-seek-sec" id="mobile-seek-sec-fwd">${playerSettings.doubleTouchDuration || 10}</span>
                     </div>
@@ -2798,18 +2835,18 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                 </div>
                 <div class="art-netflix-lock-bar">
                   <button type="button" class="art-netflix-lock-btn" id="mobile-screen-lock-btn" aria-label="화면 잠금">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="fill:none!important;stroke:#ffffff!important;">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" style="fill:none!important;stroke:#ffffff!important;"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" style="fill:none!important;stroke:#ffffff!important;"></path>
                     </svg>
                     <span>화면 잠금</span>
                   </button>
                 </div>
                 <div class="art-netflix-unlock-overlay" id="mobile-screen-unlock-overlay">
                   <button type="button" class="art-netflix-unlock-pill" id="mobile-screen-unlock-pill">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="fill:none!important;stroke:#ffffff!important;">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" style="fill:none!important;stroke:#ffffff!important;"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1" style="fill:none!important;stroke:#ffffff!important;"></path>
                     </svg>
                     <span id="mobile-screen-unlock-text">화면 잠금 해제하려면 탭하세요</span>
                   </button>
@@ -2827,8 +2864,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                     <button type="button" class="art-netflix-next-play-btn" id="art-netflix-next-play-btn">
                       <span class="art-netflix-next-progress" id="art-netflix-next-progress"></span>
                       <span class="art-netflix-next-play-content">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                          <path d="M8 5v14l11-7z"/>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="fill:#090d16!important;stroke:none!important;">
+                          <path d="M8 5v14l11-7z" style="fill:#090d16!important;stroke:none!important;"/>
                         </svg>
                         <span id="art-netflix-next-btn-label">다음 화 재생</span>
                       </span>
@@ -2846,7 +2883,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                 width: "100%",
                 height: "100%",
                 pointerEvents: "none",
-                zIndex: "36",
+                zIndex: "85",
               },
             },
           ],
@@ -2947,6 +2984,21 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         let touchStartPos: { x: number; y: number } | null = null;
         let dismissedNextForEp: number | null = null;
 
+        const getEffectiveNextEp = (): number | null => {
+          if (currentNextEpRef.current) return currentNextEpRef.current;
+          const curEp = currentEpRef.current;
+          const eps = currentEpisodesRef.current;
+          if (Array.isArray(eps) && eps.length > 0) {
+            const idx = eps.findIndex((e) => e.number === curEp);
+            if (idx !== -1 && idx + 1 < eps.length) {
+              const fallbackNext = eps[idx + 1].number;
+              currentNextEpRef.current = fallbackNext;
+              return fallbackNext;
+            }
+          }
+          return null;
+        };
+
         const hideNetflixNextCard = () => {
           const doc = (artRef.current?.template?.$player as HTMLElement | undefined)?.ownerDocument || document;
           const card = doc.getElementById("art-netflix-next-card");
@@ -2958,7 +3010,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           const card = doc.getElementById("art-netflix-next-card");
           if (!card) return;
 
-          const nextEp = currentNextEpRef.current;
+          const nextEp = getEffectiveNextEp();
           const curEp = currentEpRef.current;
           if (!nextEp || isSwitchingEpRef.current || dismissedNextForEp === curEp) {
             card.classList.remove("active");
@@ -2967,15 +3019,18 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
 
           const dur = art.duration || art.template?.$video?.duration || 0;
           const cur = art.currentTime || 0;
-          const PREVIEW_WINDOW_SEC = 12;
+          const PREVIEW_WINDOW_SEC = 20;
           const remaining = dur > 0 ? Math.max(0, dur - cur) : 9999;
           const shouldShow =
-            forceEnded || (Number.isFinite(dur) && dur > 30 && remaining <= PREVIEW_WINDOW_SEC && remaining >= 0);
+            forceEnded || (Number.isFinite(dur) && dur > 25 && remaining <= PREVIEW_WINDOW_SEC && remaining >= 0);
 
           if (!shouldShow) {
             card.classList.remove("active");
             return;
           }
+
+          // 20초 전 카드가 표시되면 백그라운드에서 다음 화 스트림 정보를 미리 준비 (버튼 탭 시 즉시 전환)
+          prefetchEpisodeInfo(nextEp);
 
           const titleEl = doc.getElementById("art-netflix-next-title");
           const statusEl = doc.getElementById("art-netflix-next-status");
@@ -3471,19 +3526,31 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (art.notice) art.notice.show = "🔓 화면 잠금이 해제되었습니다.";
           };
 
+          let lastNextBtnActionAt = 0;
           const onNetflixNextPlay = (e: Event) => {
             e.stopPropagation();
-            e.preventDefault();
-            const nextEp = currentNextEpRef.current;
+            if (e.cancelable) e.preventDefault();
+            const now = Date.now();
+            if (now - lastNextBtnActionAt < 400) return;
+            lastNextBtnActionAt = now;
+
+            const nextEp = getEffectiveNextEp();
             hideNetflixNextCard();
             if (nextEp && switchEpisodeRef.current) {
               switchEpisodeRef.current(nextEp);
+            } else if (nextEp) {
+              window.location.href = `/watch/${animeId}/${nextEp}${isDub ? "?dub=1" : ""}`;
             }
           };
 
+          let lastCancelBtnActionAt = 0;
           const onNetflixNextCancel = (e: Event) => {
             e.stopPropagation();
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
+            const now = Date.now();
+            if (now - lastCancelBtnActionAt < 400) return;
+            lastCancelBtnActionAt = now;
+
             dismissedNextForEp = currentEpRef.current;
             hideNetflixNextCard();
             if (art.notice) {
@@ -3496,11 +3563,23 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           if (btnPlay) btnPlay.addEventListener("click", onTogglePlay);
           if (btnLock) btnLock.addEventListener("click", onLockScreen);
           if (btnUnlockPill) btnUnlockPill.addEventListener("click", onUnlockPillClick);
-          if (btnNetflixNextPlay) btnNetflixNextPlay.addEventListener("click", onNetflixNextPlay);
-          if (btnNetflixNextCancel) btnNetflixNextCancel.addEventListener("click", onNetflixNextCancel);
+          if (btnNetflixNextPlay) {
+            btnNetflixNextPlay.addEventListener("click", onNetflixNextPlay);
+            btnNetflixNextPlay.addEventListener("touchend", onNetflixNextPlay, { passive: false });
+            btnNetflixNextPlay.addEventListener("pointerup", onNetflixNextPlay);
+          }
+          if (btnNetflixNextCancel) {
+            btnNetflixNextCancel.addEventListener("click", onNetflixNextCancel);
+            btnNetflixNextCancel.addEventListener("touchend", onNetflixNextCancel, { passive: false });
+            btnNetflixNextCancel.addEventListener("pointerup", onNetflixNextCancel);
+          }
 
           art.on("play", updatePlayStateIcons);
           art.on("pause", updatePlayStateIcons);
+          art.on("video:play", updatePlayStateIcons);
+          art.on("video:playing", updatePlayStateIcons);
+          art.on("video:pause", updatePlayStateIcons);
+          art.on("video:ended", updatePlayStateIcons);
           art.on("play", () => {
             lastPlayingStateRef.current = true;
           });
@@ -3515,10 +3594,22 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (btnPlay) btnPlay.removeEventListener("click", onTogglePlay);
             if (btnLock) btnLock.removeEventListener("click", onLockScreen);
             if (btnUnlockPill) btnUnlockPill.removeEventListener("click", onUnlockPillClick);
-            if (btnNetflixNextPlay) btnNetflixNextPlay.removeEventListener("click", onNetflixNextPlay);
-            if (btnNetflixNextCancel) btnNetflixNextCancel.removeEventListener("click", onNetflixNextCancel);
+            if (btnNetflixNextPlay) {
+              btnNetflixNextPlay.removeEventListener("click", onNetflixNextPlay);
+              btnNetflixNextPlay.removeEventListener("touchend", onNetflixNextPlay);
+              btnNetflixNextPlay.removeEventListener("pointerup", onNetflixNextPlay);
+            }
+            if (btnNetflixNextCancel) {
+              btnNetflixNextCancel.removeEventListener("click", onNetflixNextCancel);
+              btnNetflixNextCancel.removeEventListener("touchend", onNetflixNextCancel);
+              btnNetflixNextCancel.removeEventListener("pointerup", onNetflixNextCancel);
+            }
             art.off("play", updatePlayStateIcons);
             art.off("pause", updatePlayStateIcons);
+            art.off("video:play", updatePlayStateIcons);
+            art.off("video:playing", updatePlayStateIcons);
+            art.off("video:pause", updatePlayStateIcons);
+            art.off("video:ended", updatePlayStateIcons);
           };
         };
 
@@ -3903,7 +3994,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           localStorage.removeItem(curSaveKey);
           syncHistory(true);
 
-          const nextEp = currentNextEpRef.current;
+          const nextEp = getEffectiveNextEp();
           if (!nextEp) return;
 
           updateNetflixNextCard(true);
@@ -3915,13 +4006,13 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                 isConfirmedEnd() &&
                 autoNextRef.current &&
                 dismissedNextForEp !== endedEpisode &&
-                currentNextEpRef.current === nextEp &&
+                getEffectiveNextEp() === nextEp &&
                 switchEpisodeRef.current
               ) {
                 hideNetflixNextCard();
                 switchEpisodeRef.current(nextEp);
               }
-            }, 650);
+            }, 400);
           }
         });
 

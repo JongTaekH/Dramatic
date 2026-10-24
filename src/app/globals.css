@@ -670,6 +670,31 @@ video::cue {
 }
 
 
+/* Artplayer 기본 `.art-video-player svg { fill: var(--art-font-color) }` 규칙이
+   모바일 10초 이동 아이콘(↺ 10 / 10 ↻) 및 화면 잠금 아이콘의 내부를 흰색으로 채워버려
+   아이콘과 숫자 10이 겹쳐 뭉개지는 현상 원천 차단 */
+.art-video-player .art-mobile-seek-inner svg,
+.art-video-player .art-mobile-seek-inner svg path,
+.art-video-player .art-netflix-lock-btn svg,
+.art-video-player .art-netflix-lock-btn svg path,
+.art-video-player .art-netflix-lock-btn svg rect {
+  fill: none !important;
+  stroke: #ffffff !important;
+}
+
+.art-video-player .art-netflix-unlock-pill svg,
+.art-video-player .art-netflix-unlock-pill svg path,
+.art-video-player .art-netflix-unlock-pill svg rect {
+  fill: none !important;
+  stroke: #111827 !important;
+}
+
+.art-video-player .art-mobile-center-play svg,
+.art-video-player .art-mobile-center-play svg path {
+  fill: #ffffff !important;
+  stroke: none !important;
+}
+
 /* 더블탭 리플(.is-dt-seeking) 활성 중에는 중앙 원형 10초/재생 컨트롤 즉시 숨김 (아이콘 겹침 원천 차단) */
 .art-video-player.is-dt-seeking .art-mobile-center-controls {
   opacity: 0 !important;
@@ -679,6 +704,12 @@ video::cue {
   transform: translate(-50%, -50%) scale(0.92) !important;
 }
 
+/* ArtPlayer 내부 .art-layers(기본 z-index:40)가 .art-bottom(z-index:60) 및 .art-mask(z-index:50) 아래에 깔려
+   모바일 전체화면에서 다음화 버튼 터치가 가로막히는 문제 해결 */
+.art-video-player .art-layers {
+  z-index: 65 !important;
+}
+
 /* ========================================================
    넷플릭스(Netflix) 스타일 다음 화 전환 카드 오버레이
    (일반 화면, 모바일 가로 전체화면, PC 전체화면, PIP 완벽 호환)
@@ -686,8 +717,8 @@ video::cue {
 .art-netflix-next-card {
   position: absolute !important;
   right: max(18px, calc(env(safe-area-inset-right, 0px) + 16px)) !important;
-  bottom: max(68px, calc(env(safe-area-inset-bottom, 0px) + 58px)) !important;
-  z-index: 43 !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 66px)) !important;
+  z-index: 85 !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 8px !important;
@@ -695,9 +726,9 @@ video::cue {
   max-width: min(340px, 86vw) !important;
   padding: 12px 14px !important;
   border-radius: 12px !important;
-  background: rgba(12, 14, 22, 0.92) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.78), 0 0 0 1px rgba(0, 0, 0, 0.5) !important;
+  background: rgba(12, 14, 22, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.82), 0 0 0 1px rgba(0, 0, 0, 0.5) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
   opacity: 0 !important;
@@ -785,6 +816,7 @@ video::cue {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
   transition: transform 0.15s ease, background-color 0.15s ease !important;
   touch-action: manipulation !important;
+  pointer-events: auto !important;
 }
 
 .art-netflix-next-play-btn:hover {
@@ -805,6 +837,7 @@ video::cue {
   background: #ffffff !important;
   z-index: 1 !important;
   transition: width 0.25s linear !important;
+  pointer-events: none !important;
 }
 
 .art-netflix-next-play-content {
@@ -816,6 +849,15 @@ video::cue {
   color: #090d16 !important;
   font-weight: 900 !important;
   white-space: nowrap !important;
+  pointer-events: none !important;
+}
+
+.art-video-player .art-netflix-next-play-content svg,
+.art-video-player .art-netflix-next-play-content svg path,
+.art-netflix-next-play-content svg,
+.art-netflix-next-play-content svg path {
+  fill: #090d16 !important;
+  stroke: none !important;
 }
 
 .art-netflix-next-cancel-btn {
@@ -834,6 +876,7 @@ video::cue {
   white-space: nowrap !important;
   transition: background-color 0.15s ease, color 0.15s ease !important;
   touch-action: manipulation !important;
+  pointer-events: auto !important;
 }
 
 .art-netflix-next-cancel-btn:hover {
@@ -841,17 +884,17 @@ video::cue {
   color: #ffffff !important;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .art-netflix-next-card {
-    right: max(12px, env(safe-area-inset-right, 0px)) !important;
-    bottom: max(56px, calc(env(safe-area-inset-bottom, 0px) + 48px)) !important;
-    min-width: 210px !important;
+    right: max(14px, env(safe-area-inset-right, 0px)) !important;
+    bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 66px)) !important;
+    min-width: 220px !important;
     padding: 10px 12px !important;
     gap: 6px !important;
   }
   .art-netflix-next-play-btn,
   .art-netflix-next-cancel-btn {
-    height: 32px !important;
-    font-size: 11.5px !important;
+    height: 34px !important;
+    font-size: 12px !important;
   }
 }

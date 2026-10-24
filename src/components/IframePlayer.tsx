@@ -667,10 +667,10 @@ export default function IframePlayer({
             </div>
           )}
 
-          {/* 넷플릭스(Netflix) 스타일 다음 화 전환 카드 오버레이 */}
+          {/* 넷플릭스(Netflix) 스타일 다음 화 전환 카드 오버레이 (종료 20초 전 표시) */}
           {linkNextEp &&
             !isNextCardDismissed &&
-            (isVideoEnded || (videoDuration > 30 && videoDuration - currentVideoTime <= 12 && videoDuration - currentVideoTime >= 0)) && (
+            (isVideoEnded || (videoDuration > 25 && videoDuration - currentVideoTime <= 20 && videoDuration - currentVideoTime >= 0)) && (
               <div className="art-netflix-next-card active" role="region" aria-label="다음 에피소드 안내">
                 <div className="art-netflix-next-header">
                   <span className="art-netflix-next-badge">NEXT EPISODE</span>
@@ -691,6 +691,11 @@ export default function IframePlayer({
                   <button
                     type="button"
                     onClick={navigateToNextEpisode}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      navigateToNextEpisode();
+                    }}
                     className="art-netflix-next-play-btn"
                   >
                     <span
@@ -699,7 +704,7 @@ export default function IframePlayer({
                         width: autoNextEnabled
                           ? endedCountdownSec !== null
                             ? `${Math.min(100, Math.max(0, ((5 - endedCountdownSec) / 5) * 100))}%`
-                            : `${Math.min(100, Math.max(0, ((12 - Math.max(0, videoDuration - currentVideoTime)) / 12) * 100))}%`
+                            : `${Math.min(100, Math.max(0, ((20 - Math.max(0, videoDuration - currentVideoTime)) / 20) * 100))}%`
                           : "100%",
                       }}
                     />
@@ -713,6 +718,12 @@ export default function IframePlayer({
                   <button
                     type="button"
                     onClick={() => {
+                      setIsNextCardDismissed(true);
+                      showNotice("현재 화를 끝까지 시청합니다.");
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
                       setIsNextCardDismissed(true);
                       showNotice("현재 화를 끝까지 시청합니다.");
                     }}
