@@ -907,6 +907,14 @@ export async function resolveTvwikiEpisodeStream(
   const playerOrigin = signedPlayerUrl.origin;
   let failureCode = "PLAYER_CONFIG_UNSUPPORTED";
   let sourceFailureCode = "";
+  const playerFailure = (response: ResilientFetchResponse, prefix: string): string => {
+    const cloudflare = String(response.headers.server || "").toLowerCase().includes("cloudflare");
+    const blockPage = /sorry,? you have been blocked|cf-error-details|cloudflare ray id/i.test(response.body);
+    if (response.status === 403 && ((cloudflare && blockPage) || response.headers["cf-mitigated"] === "challenge")) {
+      return "PLAYER_ACCESS_BLOCKED";
+    }
+    return `${prefix}_HTTP_${response.status}`;
+  };
   const streamInfo = (): EpisodeStreamInfo => ({
     success: Boolean(m3u8Url), m3u8_url: m3u8Url, vtt_url: vttUrl,
     player_url: embedUrl, embed_url: embedUrl,
@@ -937,7 +945,7 @@ export async function resolveTvwikiEpisodeStream(
         headers: { Accept: "application/json", Referer: embedUrl, Origin: playerOrigin },
         timeoutMs: 5000,
       });
-      if (!sourceResponse.ok) sourceFailureCode = `PLAYER_SOURCE_HTTP_${sourceResponse.status}`;
+      if (!sourceResponse.ok) sourceFailureCode = playerFailure(sourceResponse, "PLAYER_SOURCE");
       else if (readConfig(JSON.parse(sourceResponse.body))) return streamInfo();
       else sourceFailureCode = "PLAYER_SOURCE_INVALID";
     } catch { sourceFailureCode = "PLAYER_SOURCE_FETCH_FAILED"; }
@@ -948,7 +956,7 @@ export async function resolveTvwikiEpisodeStream(
       headers: { Referer: `${baseUrl.replace(/\/+$/, "")}/` },
       timeoutMs: 7000,
     });
-    if (!pRes.ok) failureCode = `PLAYER_HTTP_${pRes.status}`;
+    if (!pRes.ok) failureCode = playerFailure(pRes, "PLAYER");
     else if (!pRes.body) failureCode = "PLAYER_EMPTY";
 
     if (pRes.ok && pRes.body) {

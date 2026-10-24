@@ -4,6 +4,32 @@ const load = require('./load-ts.cjs');
 const provider = load('src/lib/providers/tvwiki.ts', { '../db': {} });
 const reply = (body, status = 200) => ({ body, ok: status === 200, status, headers: {} });
 
+test('Cloudflare server blocks are distinguished from invalid playback URLs', async () => {
+  const fetcher = async url => {
+    if (url.includes('/drama/')) return reply('<iframe id="view_iframe" data-session1="{&quot;idx&quot;:123}"></iframe>');
+    if (url.endsWith('create_session.php')) return reply(JSON.stringify({ success: true, short_id: 'blocked123', player_url: 'https://player.example/v/blocked123' }));
+    return { ...reply('<html><h1>Sorry, you have been blocked</h1><p>Cloudflare Ray ID</p></html>', 403), headers: { server: 'cloudflare' } };
+  };
+  const info = await provider.resolveTvwikiEpisodeStream('/drama/1/123', 'https://tvwiki55.net', fetcher);
+  assert.equal(info.unsupported_reason, 'PLAYER_ACCESS_BLOCKED');
+});
+
+test('blocked access response includes the original episode and truthful status', async () => {
+  const route = load('src/app/api/anime/episode_info/route.ts', {
+    '@/lib/auth': { getSessionUser: async () => ({ id: 2 }) },
+    '@/lib/providers': { getProviderByAnimeId: () => ({
+      getAnimeDetail: async () => ({ title: 'Test', sub_episodes: [{ number: 2, watch_url: 'https://tvwiki55.net/drama/1/123' }], dub_episodes: [] }),
+      getEpisodeStream: async () => ({ success: false, m3u8_url: '', unsupported_reason: 'PLAYER_ACCESS_BLOCKED' }),
+    }) },
+  });
+  const result = await route.GET(new Request('http://localhost/api/anime/episode_info?id=dr_1&ep=2'));
+  const data = await result.json();
+  assert.equal(result.status, 502);
+  assert.equal(data.watch_url, 'https://tvwiki55.net/drama/1/123');
+  assert.equal(data.code, 'PLAYER_ACCESS_BLOCKED');
+  assert.match(data.message, /차단/);
+});
+
 test('a fresh session resolves through the player JSON API without opening its blocked HTML page', async () => {
   const calls = [];
   const fetcher = async (url, options) => {

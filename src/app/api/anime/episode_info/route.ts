@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
       PLAYER_CONFIG_UNSUPPORTED: "영상 플레이어의 재생 설정을 읽지 못했습니다.",
       PLAYER_SOURCE_INVALID: "영상 주소 API가 재생 정보를 제공하지 않았습니다.",
       PLAYER_SOURCE_FETCH_FAILED: "영상 주소 API에 연결하지 못했습니다.",
+      PLAYER_ACCESS_BLOCKED: "영상 서버의 보안 정책이 현재 호스팅 서버의 접속을 차단하고 있습니다. 원본 페이지에서 확인해 주세요.",
     };
     const httpFailure = code.match(/^(EPISODE|SESSION|PLAYER|PLAYER_SOURCE)_HTTP_(\d+)$/);
     const labels: Record<string, string> = { EPISODE: "회차 페이지", SESSION: "재생 세션 서버", PLAYER: "영상 플레이어 서버", PLAYER_SOURCE: "영상 주소 API" };
@@ -58,7 +59,8 @@ export async function GET(request: NextRequest) {
       ? `${labels[httpFailure[1]]} 응답에 오류가 있습니다 (HTTP ${httpFailure[2]}).`
       : messages[code] || "영상 서버에서 재생 주소를 가져오지 못했습니다.";
     return NextResponse.json(
-      { success: false, code, message: `${message} 다시 시도해 주세요.` },
+      { success: false, code, watch_url: watchUrl,
+        message: code === "PLAYER_ACCESS_BLOCKED" ? message : `${message} 다시 시도해 주세요.` },
       { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   }

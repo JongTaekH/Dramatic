@@ -44,3 +44,23 @@ test('playback fetches fresh HLS, renews it once, and offers retry without mount
     global.window = previous.window; global.document = previous.document; global.fetch = previous.fetch; global.IS_REACT_ACT_ENVIRONMENT = previous.act;
   }
 });
+
+test('an upstream block offers the original episode without embedding an invalid player', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://dramatic-seven.vercel.app/watch/dr_12442/2' });
+  const previous = { window: global.window, document: global.document, fetch: global.fetch, act: global.IS_REACT_ACT_ENVIRONMENT };
+  global.window = dom.window; global.document = dom.window.document; global.IS_REACT_ACT_ENVIRONMENT = true;
+  global.fetch = async () => new Response(JSON.stringify({ success: false, code: 'PLAYER_ACCESS_BLOCKED', message: 'Access blocked by upstream', watch_url: 'https://tvwiki55.net/drama/12442/406786118' }), { status: 502 });
+  const Component = load('src/components/EpisodePlayback.tsx', { './Player': { __esModule: true, default: () => React.createElement('video') } }).default;
+  const root = createRoot(dom.window.document.getElementById('root'));
+  try {
+    await React.act(async () => root.render(React.createElement(Component, { animeId: 'dr_12442', animeTitle: 'Test', episodeNumber: 2 })));
+    const link = dom.window.document.querySelector('[data-original]');
+    assert.ok(link);
+    assert.equal(link.href, 'https://tvwiki55.net/drama/12442/406786118');
+    assert.equal(link.target, '_blank');
+    assert.equal(dom.window.document.querySelector('iframe, video'), null);
+  } finally {
+    await React.act(async () => root.unmount()); dom.window.close();
+    global.window = previous.window; global.document = previous.document; global.fetch = previous.fetch; global.IS_REACT_ACT_ENVIRONMENT = previous.act;
+  }
+});
