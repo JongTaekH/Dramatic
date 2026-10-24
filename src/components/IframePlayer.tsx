@@ -86,6 +86,33 @@ export default function IframePlayer({
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [autoNextEnabled, setAutoNextEnabled] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anime_auto_next");
+        if (saved !== null) return saved === "1" || saved === "true";
+        const settingsRaw = localStorage.getItem("anime_player_settings");
+        if (settingsRaw) {
+          const parsed = JSON.parse(settingsRaw);
+          if (typeof parsed.autoNext === "boolean") return parsed.autoNext;
+        }
+      } catch {}
+    }
+    return true;
+  });
+  const [isVideoEnded, setIsVideoEnded] = useState(false);
+  const [isNextCardDismissed, setIsNextCardDismissed] = useState(false);
+  const [endedCountdownSec, setEndedCountdownSec] = useState<number | null>(null);
+
+  const autoNextRef = useRef(autoNextEnabled);
+  useEffect(() => {
+    autoNextRef.current = autoNextEnabled;
+  }, [autoNextEnabled]);
+
+  const isNextCardDismissedRef = useRef(isNextCardDismissed);
+  useEffect(() => {
+    isNextCardDismissedRef.current = isNextCardDismissed;
+  }, [isNextCardDismissed]);
 
   const lastHistorySaveTime = useRef(0);
   const lastCurrentTimeRef = useRef(0);
@@ -304,6 +331,80 @@ export default function IframePlayer({
     [animeId, animeTitle, animePoster, episodeNumber, initialEpTitle]
   );
 
+  const navigateToNextEpisode = useCallback(() => {
+    if (!linkNextEp) return;
+    syncHistory(true);
+    window.location.href = `/watch/${animeId}/${linkNextEp}`;
+  }, [animeId, linkNextEp, syncHistory]);
+
+  const toggleAutoNext = useCallback(() => {
+    setAutoNextEnabled((prev) => {
+      const nextVal = !prev;
+      try {
+        localStorage.setItem("anime_auto_next", nextVal ? "1" : "0");
+        const raw = localStorage.getItem("anime_player_settings");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          localStorage.setItem("anime_player_settings", JSON.stringify({ ...parsed, autoNext: nextVal }));
+        }
+      } catch {}
+      showNotice(`다음 화 자동재생: ${nextVal ? "활성화(ON)" : "비활성화(OFF)"}`);
+      return nextVal;
+    });
+  }, [showNotice]);
+
+  const sendNextEpisodeInfoToIframe = useCallback(() => {
+    if (!iframeRef.current?.contentWindow || !linkNextEp || !autoNextRef.current) return;
+    try {
+      iframeRef.current.contentWindow.postMessage(
+        {
+          type: "nextEpisodeInfo",
+          idx: linkNextEp,
+          url: `/watch/${animeId}/${linkNextEp}`,
+          title: `${animeTitle} ${linkNextEp}화`,
+          thumb: animePoster || "",
+        },
+        "*"
+      );
+    } catch {}
+  }, [animeId, animeTitle, animePoster, linkNextEp]);
+
+  // 에피소드 변경 시 다음 화 안내 상태 초기화 및 원본 플레이어에 다음화 메타데이터 전달
+  useEffect(() => {
+    setIsVideoEnded(false);
+    setIsNextCardDismissed(false);
+    setEndedCountdownSec(null);
+    const t = setTimeout(() => {
+      sendNextEpisodeInfoToIframe();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [episodeNumber, embedUrl, sendNextEpisodeInfoToIframe]);
+
+  // 영상 종료(ended) 시 5초 넷플릭스 카운트다운 및 자동 다음화 이동
+  useEffect(() => {
+    if (!isVideoEnded || !linkNextEp || isNextCardDismissed) {
+      setEndedCountdownSec(null);
+      return;
+    }
+    if (!autoNextEnabled) {
+      setEndedCountdownSec(null);
+      return;
+    }
+    setEndedCountdownSec(5);
+    const interval = setInterval(() => {
+      setEndedCountdownSec((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          navigateToNextEpisode();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isVideoEnded, linkNextEp, isNextCardDismissed, autoNextEnabled, navigateToNextEpisode]);
+
   // postMessage polling (100ms) & message listeners
   useEffect(() => {
     const timer = setInterval(() => {
@@ -316,6 +417,32 @@ export default function IframePlayer({
     const handleMessage = (event: MessageEvent) => {
       if (!event.data || event.source !== iframeRef.current?.contentWindow) return;
       const playerDocument = containerRef.current?.ownerDocument || document;
+
+      if (event.data.source === "tvp" && event.data.type === "requestNextEpisode") {
+        sendNextEpisodeInfoToIframe();
+        return;
+      }
+
+      // tvwiki / bunny-frame 원본 플레이어(tvp) 종료 및 다음화 이동 이벤트 처리
+      if (
+        (event.data.source === "tvp" && event.data.type === "goNextEpisode") ||
+        event.data.command === "goNextEpisode"
+      ) {
+        if (linkNextEp) {
+          navigateToNextEpisode();
+        }
+        return;
+      }
+
+      if (
+        (event.data.source === "tvp" && event.data.type === "ended") ||
+        event.data.type === "video:ended" ||
+        event.data.event === "ended"
+      ) {
+        syncHistory(true);
+        setIsVideoEnded(true);
+        return;
+      }
 
       if (event.data.zenCommand === "getFullscreenState") {
         event.source?.postMessage(
@@ -347,6 +474,9 @@ export default function IframePlayer({
         if (typeof event.data.duration === "number") {
           setVideoDuration(event.data.duration);
           lastDurationRef.current = event.data.duration;
+          if (event.data.duration > 30 && event.data.duration - time <= 0.6 && time > 10) {
+            setIsVideoEnded(true);
+          }
         }
 
         const now = Date.now();
@@ -383,7 +513,7 @@ export default function IframePlayer({
       window.removeEventListener("pagehide", handleUnload);
       void setMobileLandscape(false);
     };
-  }, [setMobileLandscape, syncHistory]);
+  }, [setMobileLandscape, syncHistory, linkNextEp, navigateToNextEpisode]);
 
   // 이전 시청 기록 조회 및 이어보기 안내 / 복원 시도
   useEffect(() => {
@@ -521,24 +651,7 @@ export default function IframePlayer({
             </div>
           )}
 
-          {/* Mobile Netflix Double-Tap Skip Zones */}
-          <div className="absolute top-14 bottom-20 inset-x-0 z-25 flex pointer-events-none select-none md:hidden">
-            <div
-              className="w-[32%] h-full pointer-events-auto cursor-pointer touch-manipulation"
-              onTouchEnd={() => {
-                handleIframeDoubleTap("left");
-              }}
-            />
-            <div className="flex-1 h-full pointer-events-none" />
-            <div
-              className="w-[32%] h-full pointer-events-auto cursor-pointer touch-manipulation"
-              onTouchEnd={() => {
-                handleIframeDoubleTap("right");
-              }}
-            />
-          </div>
-
-          {/* Double-Tap Netflix Ripple Feedback */}
+          {/* Double-Tap Netflix Ripple Feedback (하단 툴바 10s 버튼 클릭 시 피드백) */}
           {activeRipple && (
             <div
               className={`absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center pointer-events-none ${
@@ -553,6 +666,63 @@ export default function IframePlayer({
               </div>
             </div>
           )}
+
+          {/* 넷플릭스(Netflix) 스타일 다음 화 전환 카드 오버레이 */}
+          {linkNextEp &&
+            !isNextCardDismissed &&
+            (isVideoEnded || (videoDuration > 30 && videoDuration - currentVideoTime <= 12 && videoDuration - currentVideoTime >= 0)) && (
+              <div className="art-netflix-next-card active" role="region" aria-label="다음 에피소드 안내">
+                <div className="art-netflix-next-header">
+                  <span className="art-netflix-next-badge">NEXT EPISODE</span>
+                  <span className="art-netflix-next-status">
+                    {autoNextEnabled
+                      ? endedCountdownSec !== null
+                        ? endedCountdownSec <= 0
+                          ? "다음 화로 자동 연결 중..."
+                          : `${endedCountdownSec}초 후 자동 재생`
+                        : `${Math.max(1, Math.ceil(videoDuration - currentVideoTime))}초 후 자동 재생`
+                      : "다음 에피소드 준비됨"}
+                  </span>
+                </div>
+                <div className="art-netflix-next-title">
+                  {animeTitle} • {linkNextEp}화
+                </div>
+                <div className="art-netflix-next-actions">
+                  <button
+                    type="button"
+                    onClick={navigateToNextEpisode}
+                    className="art-netflix-next-play-btn"
+                  >
+                    <span
+                      className="art-netflix-next-progress"
+                      style={{
+                        width: autoNextEnabled
+                          ? endedCountdownSec !== null
+                            ? `${Math.min(100, Math.max(0, ((5 - endedCountdownSec) / 5) * 100))}%`
+                            : `${Math.min(100, Math.max(0, ((12 - Math.max(0, videoDuration - currentVideoTime)) / 12) * 100))}%`
+                          : "100%",
+                      }}
+                    />
+                    <span className="art-netflix-next-play-content">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      <span>다음 화 재생 ({linkNextEp}화)</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNextCardDismissed(true);
+                      showNotice("현재 화를 끝까지 시청합니다.");
+                    }}
+                    className="art-netflix-next-cancel-btn"
+                  >
+                    <span>계속 보기</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
           {/* Toast Notification Banner inside player */}
           {noticeMessage && (
@@ -616,6 +786,25 @@ export default function IframePlayer({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* 다음 화 자동재생 토글 */}
+            <label
+              htmlFor="iframeAutoNextToggle"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition border cursor-pointer select-none ${
+                autoNextEnabled
+                  ? "bg-indigo-600/20 text-indigo-200 border-indigo-500/50 shadow-sm"
+                  : "bg-slate-800/80 text-slate-400 border-slate-700"
+              }`}
+            >
+              <input
+                type="checkbox"
+                id="iframeAutoNextToggle"
+                checked={autoNextEnabled}
+                onChange={toggleAutoNext}
+                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-600 accent-indigo-600 cursor-pointer"
+              />
+              <span>다음 화 자동재생</span>
+            </label>
+
             <button
               onClick={toggleFullscreen}
               className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-purple-500 hover:text-white"

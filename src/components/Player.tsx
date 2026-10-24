@@ -422,6 +422,10 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
       isSwitchingEpRef.current = true;
 
       const art = artRef.current;
+      try {
+        const doc = (art.template?.$player as HTMLElement | undefined)?.ownerDocument || document;
+        doc.getElementById("art-netflix-next-card")?.classList.remove("active");
+      } catch {}
       art.notice.show = `${targetEp}화 로딩 중...`;
 
       try {
@@ -2813,6 +2817,27 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
                 <div class="art-longpress-speed-badge" id="mobile-longpress-speed-badge">
                   <span>⏩ 2.0x 배속 재생 중</span>
                 </div>
+                <div class="art-netflix-next-card" id="art-netflix-next-card" aria-live="polite">
+                  <div class="art-netflix-next-header">
+                    <span class="art-netflix-next-badge">NEXT EPISODE</span>
+                    <span class="art-netflix-next-status" id="art-netflix-next-status">다음 화 자동 재생</span>
+                  </div>
+                  <div class="art-netflix-next-title" id="art-netflix-next-title">다음 에피소드</div>
+                  <div class="art-netflix-next-actions">
+                    <button type="button" class="art-netflix-next-play-btn" id="art-netflix-next-play-btn">
+                      <span class="art-netflix-next-progress" id="art-netflix-next-progress"></span>
+                      <span class="art-netflix-next-play-content">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        <span id="art-netflix-next-btn-label">다음 화 재생</span>
+                      </span>
+                    </button>
+                    <button type="button" class="art-netflix-next-cancel-btn" id="art-netflix-next-cancel-btn">
+                      <span>계속 보기</span>
+                    </button>
+                  </div>
+                </div>
               `,
               style: {
                 position: "absolute",
@@ -2920,13 +2945,97 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         let isLongPressing = false;
         let savedRateBeforeLongPress = 1.0;
         let touchStartPos: { x: number; y: number } | null = null;
+        let dismissedNextForEp: number | null = null;
 
-        const showDoubleTapFeedback = (side: "left" | "right", seconds: number) => {
+        const hideNetflixNextCard = () => {
           const doc = (artRef.current?.template?.$player as HTMLElement | undefined)?.ownerDocument || document;
+          const card = doc.getElementById("art-netflix-next-card");
+          if (card) card.classList.remove("active");
+        };
+
+        const updateNetflixNextCard = (forceEnded = false) => {
+          const doc = (artRef.current?.template?.$player as HTMLElement | undefined)?.ownerDocument || document;
+          const card = doc.getElementById("art-netflix-next-card");
+          if (!card) return;
+
+          const nextEp = currentNextEpRef.current;
+          const curEp = currentEpRef.current;
+          if (!nextEp || isSwitchingEpRef.current || dismissedNextForEp === curEp) {
+            card.classList.remove("active");
+            return;
+          }
+
+          const dur = art.duration || art.template?.$video?.duration || 0;
+          const cur = art.currentTime || 0;
+          const PREVIEW_WINDOW_SEC = 12;
+          const remaining = dur > 0 ? Math.max(0, dur - cur) : 9999;
+          const shouldShow =
+            forceEnded || (Number.isFinite(dur) && dur > 30 && remaining <= PREVIEW_WINDOW_SEC && remaining >= 0);
+
+          if (!shouldShow) {
+            card.classList.remove("active");
+            return;
+          }
+
+          const titleEl = doc.getElementById("art-netflix-next-title");
+          const statusEl = doc.getElementById("art-netflix-next-status");
+          const btnLabelEl = doc.getElementById("art-netflix-next-btn-label");
+          const progressEl = doc.getElementById("art-netflix-next-progress");
+
+          if (titleEl) {
+            titleEl.textContent = `${animeTitle} • ${nextEp}화`;
+          }
+          if (btnLabelEl) {
+            btnLabelEl.textContent = `다음 화 재생 (${nextEp}화)`;
+          }
+
+          if (autoNextRef.current) {
+            const remSec = forceEnded ? 0 : remaining;
+            const pct = forceEnded
+              ? 100
+              : Math.min(100, Math.max(0, ((PREVIEW_WINDOW_SEC - remSec) / PREVIEW_WINDOW_SEC) * 100));
+            if (progressEl) {
+              progressEl.style.width = `${pct.toFixed(1)}%`;
+            }
+            if (statusEl) {
+              statusEl.textContent =
+                remSec <= 0.6 ? "다음 화로 자동 연결 중..." : `${Math.max(1, Math.ceil(remSec))}초 후 자동 재생`;
+            }
+          } else {
+            if (progressEl) {
+              progressEl.style.width = "100%";
+            }
+            if (statusEl) {
+              statusEl.textContent = "다음 에피소드 준비됨";
+            }
+          }
+
+          card.classList.add("active");
+        };
+
+        const showDoubleTapFeedback = (side: "left" | "right", seconds: number, fromCenterButton = false) => {
+          const playerEl = artRef.current?.template?.$player as HTMLElement | undefined;
+          const doc = playerEl?.ownerDocument || document;
           const leftRipple = doc.getElementById("dt-ripple-left");
           const rightRipple = doc.getElementById("dt-ripple-right");
           const leftLabel = doc.getElementById("dt-label-left");
           const rightLabel = doc.getElementById("dt-label-right");
+
+          // 중앙 원형 [↺ 10] / [10 ↻] 버튼을 직접 탭한 경우:
+          // 컨트롤 오버레이가 이미 떠 있으므로 중복 더블탭 리플 아이콘을 겹쳐 띄우지 않고 상단 안내만 표시
+          if (fromCenterButton) {
+            if (leftRipple) leftRipple.classList.remove("active");
+            if (rightRipple) rightRipple.classList.remove("active");
+            if (playerEl) playerEl.classList.remove("is-dt-seeking");
+            if (artRef.current) {
+              artRef.current.notice.show = side === "left" ? `⏪ ${seconds}초 뒤로` : `⏩ ${seconds}초 앞으로`;
+            }
+            return;
+          }
+
+          if (playerEl) {
+            playerEl.classList.add("is-dt-seeking");
+          }
 
           if (side === "left" && leftRipple && leftLabel) {
             leftLabel.textContent = `-${seconds}초`;
@@ -2948,11 +3057,16 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           rippleHideTimer = setTimeout(() => {
             if (leftRipple) leftRipple.classList.remove("active");
             if (rightRipple) rightRipple.classList.remove("active");
+            if (playerEl) playerEl.classList.remove("is-dt-seeking");
           }, 600);
         };
 
         // 🌟 통합 누적 탐색 함수 (모바일 화면 더블터치 & 중앙 원형 [↺ 10] / [10 ↻] 원탭 공용)
-        const executeSeekWithAccumulation = (side: "left" | "right", forceAllow = false) => {
+        const executeSeekWithAccumulation = (
+          side: "left" | "right",
+          forceAllow = false,
+          fromCenterButton = false
+        ) => {
           if (isScreenLocked) return;
           if (!forceAllow && !playerSettingsRef.current.doubleTouchSeek) return;
           const step = playerSettingsRef.current.doubleTouchDuration || 10;
@@ -2972,10 +3086,10 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             art.seek = Math.min(art.duration || 99999, art.currentTime + step);
           }
 
-          showDoubleTapFeedback(side, cumulativeSec);
+          showDoubleTapFeedback(side, cumulativeSec, fromCenterButton);
 
-          // 중앙 버튼 누를 때 컨트롤바 자동 숨김 타이머 연장(연타 중 컨트롤바가 꺼지지 않도록)
-          if (art && art.controls) {
+          // 중앙 버튼 누를 때만 컨트롤바 자동 숨김 타이머 연장(더블탭 시에는 컨트롤바 숨김 유지)
+          if (fromCenterButton && art && art.controls) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (art.controls as any).timer = Date.now();
           }
@@ -3020,7 +3134,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           if (isScreenLocked || !target) return;
           if (
             target.closest(
-              ".art-bottom, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, button, a, input, .player-settings-modal-root"
+              ".art-bottom, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, .art-netflix-next-card, button, a, input, .player-settings-modal-root"
             )
           ) {
             return;
@@ -3059,10 +3173,10 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           }
           stopLongPressSpeed();
 
-          // 컨트롤 UI, 프로그레스바, 중앙 버튼, 잠금 버튼, 모달 등 영역 터치는 화면 제스처에서 제외
+          // 컨트롤 UI, 프로그레스바, 중앙 버튼, 잠금 버튼, 다음화 카드, 모달 등 영역 터치는 화면 제스처에서 제외
           if (
             target.closest(
-              ".art-bottom, .art-controls, .art-control, .art-progress, .art-progress-control, .art-control-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-pill, button, a, input, .player-settings-modal-root"
+              ".art-bottom, .art-controls, .art-control, .art-progress, .art-progress-control, .art-control-progress, [class*='progress'], .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-pill, .art-netflix-next-card, button, a, input, .player-settings-modal-root"
             )
           ) {
             return;
@@ -3129,7 +3243,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (art && art.controls && art.controls.show) {
               art.controls.show = false;
             }
-            executeSeekWithAccumulation(side);
+            executeSeekWithAccumulation(side, false, false);
             lastTouchTime = 0;
             lastTouchSide = null;
             return;
@@ -3212,7 +3326,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (
               target &&
               target.closest(
-                ".art-mobile-center-btn, .art-netflix-lock-btn, .art-netflix-unlock-pill, .art-bottom, .art-top, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, button, input, a"
+                ".art-mobile-center-btn, .art-netflix-lock-btn, .art-netflix-unlock-pill, .art-netflix-next-card, .art-bottom, .art-top, .art-controls, .art-control, .art-progress, [class*='progress'], .art-settings, .art-contextmenus, button, input, a"
               )
             ) {
               return;
@@ -3238,7 +3352,7 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           if (!target) return;
           if (
             target.closest(
-              ".art-bottom, .art-controls, .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, button, a, input, .player-settings-modal-root"
+              ".art-bottom, .art-controls, .art-settings, .art-contextmenus, .art-notice, .art-loading, .art-mobile-center-controls, .art-netflix-lock-bar, .art-netflix-unlock-overlay, .art-netflix-next-card, button, a, input, .player-settings-modal-root"
             )
           ) {
             return;
@@ -3265,8 +3379,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
         };
 
         // ==========================================
-        // 🌟 넷플릭스 모바일 중앙 컨트롤 & 화면 잠금 이벤트 바인딩
-        // (원탭 즉시 ±10초 탐색, 중앙 재생/일시정지, 화면 잠금/해제)
+        // 🌟 넷플릭스 모바일 중앙 컨트롤 & 화면 잠금 & 다음화 카드 이벤트 바인딩
+        // (원탭 즉시 ±10초 탐색, 중앙 재생/일시정지, 화면 잠금/해제, 넷플릭스 다음화 전환)
         // ==========================================
         let cleanupCenterControls: (() => void) | null = null;
         const bindMobileCenterControls = () => {
@@ -3281,6 +3395,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           const unlockOverlay = doc.getElementById("mobile-screen-unlock-overlay");
           const btnUnlockPill = doc.getElementById("mobile-screen-unlock-pill");
           const unlockText = doc.getElementById("mobile-screen-unlock-text");
+          const btnNetflixNextPlay = doc.getElementById("art-netflix-next-play-btn");
+          const btnNetflixNextCancel = doc.getElementById("art-netflix-next-cancel-btn");
 
           const updatePlayStateIcons = () => {
             if (!iconPlay || !iconPause || !art.video) return;
@@ -3293,17 +3409,17 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             }
           };
 
-          // 🌟 넷플릭스 표준: 중앙 [↺ 10] / [10 ↻] 버튼은 1번만 탭해도 즉시 탐색 실행!
+          // 🌟 넷플릭스 표준: 중앙 [↺ 10] / [10 ↻] 버튼은 1번만 탭해도 즉시 탐색 실행 (중복 리플 제외)!
           const onSeekBack = (e: Event) => {
             e.stopPropagation();
             e.preventDefault();
-            executeSeekWithAccumulation("left", true);
+            executeSeekWithAccumulation("left", true, true);
           };
 
           const onSeekFwd = (e: Event) => {
             e.stopPropagation();
             e.preventDefault();
-            executeSeekWithAccumulation("right", true);
+            executeSeekWithAccumulation("right", true, true);
           };
 
           const onTogglePlay = (e: Event) => {
@@ -3355,11 +3471,33 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (art.notice) art.notice.show = "🔓 화면 잠금이 해제되었습니다.";
           };
 
+          const onNetflixNextPlay = (e: Event) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const nextEp = currentNextEpRef.current;
+            hideNetflixNextCard();
+            if (nextEp && switchEpisodeRef.current) {
+              switchEpisodeRef.current(nextEp);
+            }
+          };
+
+          const onNetflixNextCancel = (e: Event) => {
+            e.stopPropagation();
+            e.preventDefault();
+            dismissedNextForEp = currentEpRef.current;
+            hideNetflixNextCard();
+            if (art.notice) {
+              art.notice.show = "현재 화를 끝까지 시청합니다.";
+            }
+          };
+
           if (btnSeekBack) btnSeekBack.addEventListener("click", onSeekBack);
           if (btnSeekFwd) btnSeekFwd.addEventListener("click", onSeekFwd);
           if (btnPlay) btnPlay.addEventListener("click", onTogglePlay);
           if (btnLock) btnLock.addEventListener("click", onLockScreen);
           if (btnUnlockPill) btnUnlockPill.addEventListener("click", onUnlockPillClick);
+          if (btnNetflixNextPlay) btnNetflixNextPlay.addEventListener("click", onNetflixNextPlay);
+          if (btnNetflixNextCancel) btnNetflixNextCancel.addEventListener("click", onNetflixNextCancel);
 
           art.on("play", updatePlayStateIcons);
           art.on("pause", updatePlayStateIcons);
@@ -3377,6 +3515,8 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             if (btnPlay) btnPlay.removeEventListener("click", onTogglePlay);
             if (btnLock) btnLock.removeEventListener("click", onLockScreen);
             if (btnUnlockPill) btnUnlockPill.removeEventListener("click", onUnlockPillClick);
+            if (btnNetflixNextPlay) btnNetflixNextPlay.removeEventListener("click", onNetflixNextPlay);
+            if (btnNetflixNextCancel) btnNetflixNextCancel.removeEventListener("click", onNetflixNextCancel);
             art.off("play", updatePlayStateIcons);
             art.off("pause", updatePlayStateIcons);
           };
@@ -3718,6 +3858,9 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
               art.__renderHighlights();
             }
           }
+
+          // 넷플릭스 스타일 다음 화 카드 실시간 업데이트 (종료 12초 전 ~ 종료 시점)
+          updateNetflixNextCard(false);
         });
 
         art.on("video:pause", () => {
@@ -3734,18 +3877,25 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
             lastSyncTimeRef.current = Date.now();
             syncHistory(false);
           }, 1200);
+          updateNetflixNextCard(false);
         });
 
-        // Auto next episode on video end
+        // Auto next episode on video end (넷플릭스 스타일 다음화 전환 연동)
         art.on("video:ended", () => {
           const endedEpisode = currentEpRef.current;
           const isConfirmedEnd = () => {
             const video = art.video;
-            const duration = art.duration;
-            return artRef.current === art && currentEpRef.current === endedEpisode &&
-              !isSwitchingEpRef.current && !pipRestoringTargetRef.current &&
-              video?.ended && !video.seeking && Number.isFinite(duration) && duration > 0 &&
-              Number.isFinite(art.currentTime) && Math.abs(duration - art.currentTime) <= 1;
+            const duration = art.duration || video?.duration || 0;
+            const cur = art.currentTime || video?.currentTime || 0;
+            return (
+              artRef.current === art &&
+              currentEpRef.current === endedEpisode &&
+              !isSwitchingEpRef.current &&
+              !pipRestoringTargetRef.current &&
+              Boolean(video?.ended) &&
+              !video?.seeking &&
+              (!Number.isFinite(duration) || duration <= 0 || cur >= Math.max(0, duration - 8))
+            );
           };
           // DOM transfers and stream changes can emit transient ended events.
           if (!isConfirmedEnd()) return;
@@ -3754,13 +3904,24 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           syncHistory(true);
 
           const nextEp = currentNextEpRef.current;
-          if (autoNextRef.current && nextEp) {
-            art.notice.show = "다음 화로 자동 연결합니다...";
+          if (!nextEp) return;
+
+          updateNetflixNextCard(true);
+
+          if (autoNextRef.current && dismissedNextForEp !== endedEpisode) {
+            art.notice.show = `▶ ${nextEp}화로 자동 연결합니다...`;
             setTimeout(() => {
-              if (isConfirmedEnd() && autoNextRef.current && currentNextEpRef.current === nextEp && switchEpisodeRef.current) {
+              if (
+                isConfirmedEnd() &&
+                autoNextRef.current &&
+                dismissedNextForEp !== endedEpisode &&
+                currentNextEpRef.current === nextEp &&
+                switchEpisodeRef.current
+              ) {
+                hideNetflixNextCard();
                 switchEpisodeRef.current(nextEp);
               }
-            }, 1000);
+            }, 650);
           }
         });
 
