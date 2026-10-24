@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertSafeProxyUrl, UnsafeProxyUrlError } from "@/lib/proxyGuard";
 import { getSessionUser } from "@/lib/auth";
 import { extractAacFromTs } from "@/lib/tsDemuxer";
+import { decodeHlsKey } from "@/lib/hlsKey";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,20 @@ export async function GET(request: NextRequest) {
       "Access-Control-Allow-Methods": "GET, OPTIONS",
       "Cache-Control": "public, max-age=86400, s-maxage=86400, stale-while-revalidate=43200, immutable",
     };
+
+    // key7 serves a JSON envelope, not the raw AES key expected by HLS.js.
+    if (/\/v\/key7\/?$/.test(new URL(targetUrl).pathname)) {
+      const key = decodeHlsKey(new Uint8Array(await res.arrayBuffer()));
+      return new NextResponse(Buffer.from(key), {
+        status: 200,
+        headers: {
+          ...responseHeaders,
+          "Content-Type": "application/octet-stream",
+          "Content-Length": "16",
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
 
     if (isAudioOnly) {
       const arrayBuffer = await res.arrayBuffer();

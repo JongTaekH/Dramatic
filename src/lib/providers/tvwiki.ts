@@ -5,7 +5,6 @@ import https from "https";
 import http from "http";
 import zlib from "zlib";
 import crypto from "crypto";
-import vm from "vm";
 import { Duplex } from "stream";
 import {
   getTvwikiBaseUrl,
@@ -13,6 +12,7 @@ import {
   DEFAULT_TVWIKI_URL,
   TELEGRAM_TVWIKI_URL,
   TVWIKI_STORE_URL,
+  TVWIKI_URL_GUIDE,
 } from "../db";
 import {
   AnimeDetail,
@@ -356,13 +356,13 @@ export function extractTvwikiDomainFromHtml(html: string): {
  * 2. https://r.jina.ai/https://t.me/s/tvwiki_url (Rendered Telegram messages fallback)
  * 3. https://tvwiki.store (Official redirect hub announced on Telegram)
  */
-export async function resolveLatestTvwikiUrl(): Promise<string | null> {
+export async function resolveLatestTvwikiUrl(fetcher: typeof resilientFetch = resilientFetch): Promise<string | null> {
   const candidates: string[] = [];
-  const hubsToQuery = new Set<string>([TVWIKI_STORE_URL]);
+  const hubsToQuery = new Set<string>([TVWIKI_STORE_URL, TVWIKI_URL_GUIDE]);
 
   // Step 1: Check Telegram public channel directly
   try {
-    const tgRes = await resilientFetch(TELEGRAM_TVWIKI_URL, { timeoutMs: 6000 });
+    const tgRes = await fetcher(TELEGRAM_TVWIKI_URL, { timeoutMs: 6000 });
     if (tgRes.ok && tgRes.body) {
       const { numberedDomains, hubDomains } = extractTvwikiDomainFromHtml(tgRes.body);
       for (const d of numberedDomains.reverse()) {
@@ -377,7 +377,7 @@ export async function resolveLatestTvwikiUrl(): Promise<string | null> {
   // Step 2: Check Jina Reader mirror of Telegram channel if needed
   if (candidates.length === 0) {
     try {
-      const jinaRes = await resilientFetch(`https://r.jina.ai/${TELEGRAM_TVWIKI_URL}`, { timeoutMs: 6000 });
+      const jinaRes = await fetcher(`https://r.jina.ai/${TELEGRAM_TVWIKI_URL}`, { timeoutMs: 6000 });
       if (jinaRes.ok && jinaRes.body) {
         const { numberedDomains, hubDomains } = extractTvwikiDomainFromHtml(jinaRes.body);
         for (const d of numberedDomains.reverse()) {
@@ -393,7 +393,7 @@ export async function resolveLatestTvwikiUrl(): Promise<string | null> {
   // Step 3: Query redirect hub(s) (e.g. https://tvwiki.store) for the latest active numbered domain
   for (const hubUrl of hubsToQuery) {
     try {
-      const hubRes = await resilientFetch(hubUrl, { timeoutMs: 6000 });
+      const hubRes = await fetcher(hubUrl, { timeoutMs: 6000 });
       if (hubRes.ok && hubRes.body) {
         const { numberedDomains } = extractTvwikiDomainFromHtml(hubRes.body);
         // Put hub's target domain at the very front since tvwiki.store always points to the live domain
@@ -409,14 +409,14 @@ export async function resolveLatestTvwikiUrl(): Promise<string | null> {
   // Step 4: Verify candidates by checking `/drama`
   for (const candidate of candidates) {
     try {
-      const testRes = await resilientFetch(`${candidate}/drama`, { timeoutMs: 6000 });
+      const testRes = await fetcher(`${candidate}/drama`, { timeoutMs: 6000 });
       if (testRes.ok && testRes.body.includes("list_type")) {
         return candidate.replace(/\/+$/, "");
       }
     } catch {}
   }
 
-  return candidates[0]?.replace(/\/+$/, "") || null;
+  return null;
 }
 
 /**
@@ -829,7 +829,8 @@ function decryptLv3Payload(
  */
 export async function resolveTvwikiEpisodeStream(
   watchUrl: string,
-  baseUrl: string
+  baseUrl: string,
+  fetcher: typeof resilientFetch = resilientFetch
 ): Promise<EpisodeStreamInfo | null> {
   // Replace host in watchUrl with current baseUrl in case domain changed
   let targetEpUrl = watchUrl;
@@ -841,7 +842,7 @@ export async function resolveTvwikiEpisodeStream(
     targetEpUrl = parsedWatch.toString();
   } catch {}
 
-  const epRes = await resilientFetch(targetEpUrl, {
+  const epRes = await fetcher(targetEpUrl, {
     headers: { Referer: `${baseUrl}/` },
     timeoutMs: 8000,
   });
@@ -866,7 +867,7 @@ export async function resolveTvwikiEpisodeStream(
     : "";
 
   const createSessionUrl = `${baseUrl.replace(/\/+$/, "")}/api/create_session.php`;
-  const sessRes = await resilientFetch(createSessionUrl, {
+  const sessRes = await fetcher(createSessionUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -889,19 +890,40 @@ export async function resolveTvwikiEpisodeStream(
 
   if (!sessJson?.success || !sessJson?.player_url) return null;
 
-  const embedUrl = `${sessJson.player_url}?t=${encodeURIComponent(sessJson.t || "")}&sig=${encodeURIComponent(sessJson.sig || "")}`;
+  const signedPlayerUrl = new URL(sessJson.player_url, baseUrl);
+  if (!['https:', 'http:'].includes(signedPlayerUrl.protocol)) return null;
+  if (sessJson.t) signedPlayerUrl.searchParams.set("t", sessJson.t);
+  if (sessJson.sig) signedPlayerUrl.searchParams.set("sig", sessJson.sig);
+  const embedUrl = signedPlayerUrl.toString();
   let m3u8Url = "";
   let vttUrl = typeof sessionData.vtt === "string" && sessionData.vtt.startsWith("http") ? sessionData.vtt : "";
   let playerOrigin = "";
 
   try {
     playerOrigin = new URL(embedUrl).origin;
-    const pRes = await resilientFetch(embedUrl, {
+    const pRes = await fetcher(embedUrl, {
       headers: { Referer: `${baseUrl.replace(/\/+$/, "")}/` },
       timeoutMs: 7000,
     });
 
     if (pRes.ok && pRes.body) {
+      // Current players publish a JSON configuration; the URL may end in .html
+      // even though it serves an HLS playlist. Do not infer media type from suffix.
+      const configMatch = pRes.body.match(/window\.TVP_CONFIG\s*=\s*(\{[^\n]*?\})\s*;/);
+      if (configMatch) {
+        try {
+          const config = JSON.parse(configMatch[1]);
+          if (config.mode === "direct" && typeof config.src === "string" && config.src) {
+            const source = new URL(config.src, embedUrl);
+            if (["https:", "http:"].includes(source.protocol)) m3u8Url = source.toString();
+          }
+          if (!vttUrl && typeof config.subtitle === "string" && /^https?:\/\//.test(config.subtitle)) {
+            vttUrl = config.subtitle;
+          }
+        } catch {
+          // Keep the legacy extraction and iframe fallback for other players.
+        }
+      }
       const pRawCookies = pRes.headers["set-cookie"];
       const pCookieHeader = Array.isArray(pRawCookies)
         ? pRawCookies.map((c) => c.split(";")[0]).join("; ")
@@ -913,18 +935,21 @@ export async function resolveTvwikiEpisodeStream(
         .map((x) => x[1])
         .filter((s) => s.includes("window._") && !s.includes("key-share.php"));
 
-      if (scripts.length > 0) {
-        const ctx: { window: Record<string, any> } = { window: {} };
+      if (!m3u8Url && scripts.length > 0) {
+        let encObj: any = null;
         for (const s of scripts) {
+          // Read literal data only. A VM is not a security boundary for
+          // third-party JavaScript, especially with user-editable domains.
+          const assignment = s.match(/window\._[\w$]+\s*=\s*(\{[\s\S]*\})\s*;?\s*$/);
+          if (!assignment) continue;
           try {
-            vm.runInNewContext(s, ctx, { timeout: 500 });
+            encObj = JSON.parse(assignment[1]);
+            break;
           } catch {}
         }
-        const varName = Object.keys(ctx.window)[0];
-        const encObj = varName ? ctx.window[varName] : null;
 
         if (encObj?.t && encObj?.k && Array.isArray(encObj?.b) && encObj.b.length > 0) {
-          const ksRes = await resilientFetch(`${playerOrigin}/api/key-share.php`, {
+          const ksRes = await fetcher(`${playerOrigin}/api/key-share.php`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -959,7 +984,7 @@ export async function resolveTvwikiEpisodeStream(
                   const dec = Buffer.concat([decipher.update(ctBuf), decipher.final()]).toString("utf8");
                   const cfgMatch = dec.match(/const ART_CONFIG\s*=\s*(\{[\s\S]*?\});/);
                   if (cfgMatch) {
-                    const artConfig = vm.runInNewContext("(" + cfgMatch[1] + ")", {}, { timeout: 500 });
+                    const artConfig = JSON.parse(cfgMatch[1]);
                     if (artConfig?.wrappedKey && artConfig?.wrapNonce) {
                       const wrapReq = {
                         n: artConfig.wrapNonce,
@@ -967,7 +992,7 @@ export async function resolveTvwikiEpisodeStream(
                         iat: String(artConfig.wrapIssuedAt),
                         sig: artConfig.wrapSignature,
                       };
-                      const wRes = await resilientFetch(`${playerOrigin}/wrap_key.php`, {
+                      const wRes = await fetcher(`${playerOrigin}/wrap_key.php`, {
                         method: "POST",
                         headers: {
                           "Content-Type": "application/json",
@@ -1034,7 +1059,8 @@ class TvwikiProvider implements AnimeProvider {
   readonly displayName = "TVWIKI (티비위키)";
 
   async getBaseUrl(): Promise<string> {
-    const url = await getTvwikiBaseUrl();
+    // Read the persisted value on each provider operation, including across workers.
+    const url = await getTvwikiBaseUrl(true);
     return (url || DEFAULT_TVWIKI_URL).replace(/\/+$/, "");
   }
 

@@ -97,16 +97,16 @@ export default function BaseUrlSettingsModal({
         setLatencyMs(data.health ? data.health.latencyMs : null);
         setStatusText(data.health ? data.health.statusText : null);
         setSuccessMessage(
-          data.message || `텔레그램에서 최신 주소(${data.baseUrl})를 찾아 자동 적용했습니다.`
+          data.message || `최신 주소(${data.baseUrl})를 찾아 자동 적용했습니다.`
         );
         if (onUpdated) {
           onUpdated(data.baseUrl);
         }
       } else {
-        setErrorMessage(data.message || "텔레그램에서 최신 주소를 탐색하지 못했습니다.");
+        setErrorMessage(data.message || "주소 안내 사이트와 텔레그램에서 최신 주소를 찾지 못했습니다.");
       }
     } catch {
-      setErrorMessage("텔레그램 최신 주소 자동 탐색 중 오류가 발생했습니다.");
+      setErrorMessage("최신 주소 자동 탐색 중 오류가 발생했습니다.");
     } finally {
       setLoadingDiscover(false);
     }
@@ -220,7 +220,7 @@ export default function BaseUrlSettingsModal({
             <div>
               <h2 className="text-base font-bold text-white">TVWIKI 도메인 주소 설정</h2>
               <p className="text-xs text-slate-400">
-                도메인이 변경되었을 때 텔레그램에서 최신 주소를 자동으로 가져옵니다.
+                최신 주소를 저장하면 화면을 새로고침하여 재생 정보를 갱신합니다.
               </p>
             </div>
           </div>
@@ -278,11 +278,12 @@ export default function BaseUrlSettingsModal({
               <div>
                 <h3 className="flex items-center gap-1.5 text-xs font-bold text-purple-200">
                   <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                  <span>텔레그램 공식 채널에서 최신 주소 자동 탐색</span>
+                  <span>주소 안내 사이트와 텔레그램에서 최신 주소 탐색</span>
                 </h3>
                 <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
                   기존 주소 접속이 안 될 경우 <code className="text-purple-300">t.me/s/tvwiki_url</code>{" "}
-                  및 공식 허브에서 최신 도메인을 찾아 즉시 적용합니다.
+                  , <a href="https://tvwikiurl.net/" target="_blank" rel="noopener noreferrer" className="text-purple-300 underline">tvwikiurl.net</a>
+                  과 tvwiki.store에서 접속 가능한 도메인을 찾아 적용합니다.
                 </p>
               </div>
             </div>
@@ -295,12 +296,12 @@ export default function BaseUrlSettingsModal({
               {loadingDiscover ? (
                 <>
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  <span>텔레그램에서 최신 주소 탐색 중...</span>
+                  <span>접속 가능한 최신 주소 탐색 중...</span>
                 </>
               ) : (
                 <>
                   <Send className="h-3.5 w-3.5" />
-                  <span>텔레그램(t.me/s/tvwiki_url)에서 최신 주소 자동 적용</span>
+                  <span>최신 주소 찾기 및 자동 적용</span>
                 </>
               )}
             </button>

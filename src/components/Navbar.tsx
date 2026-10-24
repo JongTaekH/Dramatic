@@ -215,7 +215,9 @@ export default function Navbar() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onUpdated={() => {
-          setDomainStatus("healthy");
+          // Recreate the server page and player with a freshly issued stream URL.
+          // A status-only update leaves the previous signed URL in the player.
+          window.location.reload();
         }}
       />
     </>

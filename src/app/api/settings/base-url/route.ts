@@ -5,6 +5,7 @@ import {
   DEFAULT_TVWIKI_URL,
   TELEGRAM_TVWIKI_URL,
   TVWIKI_STORE_URL,
+  TVWIKI_URL_GUIDE,
 } from "@/lib/db";
 import { resilientFetch, resolveLatestTvwikiUrl } from "@/lib/providers/tvwiki";
 import { getSessionUser } from "@/lib/auth";
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
   const bypass = searchParams.get("refresh") === "1";
 
   try {
-    const currentBaseUrl = await getTvwikiBaseUrl();
+    const currentBaseUrl = await getTvwikiBaseUrl(true);
     const health = await checkUrlHealth(`${currentBaseUrl}/drama`, 7000, bypass);
 
     return NextResponse.json({
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
       defaultUrl: DEFAULT_TVWIKI_URL,
       telegramUrl: TELEGRAM_TVWIKI_URL,
       storeUrl: TVWIKI_STORE_URL,
+      guideUrl: TVWIKI_URL_GUIDE,
       isHealthy: health.ok,
       latencyMs: health.latencyMs,
       statusText: health.statusText,
@@ -89,12 +91,6 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (!user.isAdmin) {
-    return NextResponse.json(
-      { success: false, message: "관리자만 베이스 URL을 변경할 수 있습니다." },
-      { status: 403 }
-    );
-  }
 
   try {
     const body = await request.json();
@@ -106,7 +102,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            message: "텔레그램 공지 채널에서 유효한 TVWIKI 주소를 찾지 못했습니다.",
+            message: "주소 안내 사이트와 텔레그램에서 접속 가능한 TVWIKI 주소를 찾지 못했습니다.",
           },
           { status: 404 }
         );
@@ -114,6 +110,12 @@ export async function POST(request: NextRequest) {
 
       const health = await checkUrlHealth(`${discovered}/drama`, 8000, true);
       const saved = await setTvwikiBaseUrl(discovered);
+      if (!saved) {
+        return NextResponse.json(
+          { success: false, message: "데이터베이스 저장에 실패했습니다. 연결 설정을 확인해 주세요." },
+          { status: 500 }
+        );
+      }
       delete healthCache[discovered];
       delete healthCache[`${discovered}/drama`];
 
@@ -121,12 +123,12 @@ export async function POST(request: NextRequest) {
         success: saved,
         provider: "tvwiki",
         baseUrl: discovered,
-        message: `텔레그램 채널(${TELEGRAM_TVWIKI_URL})에서 최신 주소(${discovered})를 찾아 적용했습니다.`,
+        message: `주소 안내 사이트와 텔레그램을 확인하여 최신 주소(${discovered})를 적용했습니다.`,
         health,
       });
     }
 
-    const rawUrl = body.baseUrl?.trim();
+    const rawUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : "";
     const force = Boolean(body.force);
 
     if (!rawUrl) {
@@ -143,7 +145,17 @@ export async function POST(request: NextRequest) {
     formatted = formatted.replace(/\/+$/, "");
 
     try {
-      new URL(formatted);
+      const parsed = new URL(formatted);
+      // This is a TVWIKI setting, not an arbitrary upstream server selector.
+      if (parsed.protocol !== "https:" || !/^tvwiki\d+\.net$/i.test(parsed.hostname) ||
+          parsed.port || parsed.username || parsed.password || parsed.pathname !== "/" ||
+          parsed.search || parsed.hash) {
+        return NextResponse.json(
+          { success: false, message: "https://tvwiki55.net 형식의 TVWIKI 도메인만 입력해 주세요." },
+          { status: 400 }
+        );
+      }
+      formatted = parsed.origin;
     } catch {
       return NextResponse.json(
         { success: false, message: `올바른 URL 형식이 아닙니다 (예: ${DEFAULT_TVWIKI_URL})` },

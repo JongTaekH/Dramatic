@@ -265,6 +265,7 @@ export const TELEGRAM_FALLBACK_URL = "https://t.me/s/tvwiki_url";
 export const TELEGRAM_TVWIKI_URL = TELEGRAM_FALLBACK_URL;
 export const TVWIKI_STORE_HUB_URL = "https://tvwiki.store";
 export const TVWIKI_STORE_URL = TVWIKI_STORE_HUB_URL;
+export const TVWIKI_URL_GUIDE = "https://tvwikiurl.net/";
 
 let cachedTvwikiBaseUrl: { url: string; timestamp: number } | null = null;
 
@@ -311,13 +312,11 @@ export async function setTvwikiBaseUrl(newUrl: string): Promise<boolean> {
   }
   formatted = formatted.replace(/\/+$/, "");
 
-  cachedTvwikiBaseUrl = { url: formatted, timestamp: Date.now() };
-
   const sql = getDb();
-  if (!sql) return true; // DB 미연결 환경에서도 메모리 캐시는 즉시 업데이트
+  if (!sql) return false;
 
-  await initDb();
   try {
+    await initDb();
     await sql`
       INSERT INTO drama_system_settings (key, value, updated_at)
       VALUES ('tvwiki_base_url', ${formatted}, CURRENT_TIMESTAMP)
@@ -325,6 +324,7 @@ export async function setTvwikiBaseUrl(newUrl: string): Promise<boolean> {
         value = EXCLUDED.value,
         updated_at = CURRENT_TIMESTAMP;
     `;
+    cachedTvwikiBaseUrl = { url: formatted, timestamp: Date.now() };
     return true;
   } catch (e) {
     console.error("[setTvwikiBaseUrl error]:", e);
