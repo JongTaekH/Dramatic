@@ -9,11 +9,24 @@ async function main() {
   const realFetch = global.fetch;
   let sourceApiCalls = 0;
   let playerDocumentCalls = 0;
-  global.fetch = (input, options) => {
+  global.fetch = async (input, options) => {
     const url = new URL(typeof input === 'string' ? input : input.url || input.toString());
     if (url.pathname === '/player/api/source.php') sourceApiCalls++;
     if (url.hostname.includes('bunny-frame') && /^\/v\/[^/]+$/.test(url.pathname)) playerDocumentCalls++;
-    return realFetch(input, options);
+    const response = await realFetch(input, options);
+    if (process.env.PLAYBACK_DIAGNOSTICS === '1' && !response.ok) {
+      const text = (await response.clone().text())
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        .replace(/https?:\/\/[^\s"<>]+/g, '[url]')
+        .replace(/\b[A-Za-z0-9_+/=-]{24,}\b/g, '[redacted]').slice(0, 300);
+      console.log('UPSTREAM_RESPONSE', JSON.stringify({
+        host: url.hostname, path: url.pathname, status: response.status,
+        server: response.headers.get('server'), challenge: response.headers.get('cf-mitigated'), text,
+      }));
+    }
+    return response;
   };
   try {
   const provider = load('src/lib/providers/tvwiki.ts', { '../db': {
@@ -34,8 +47,9 @@ async function main() {
   const playlist = load('src/app/api/anime/stream/m3u8/route.ts', common);
   const segment = load('src/app/api/anime/stream/segment/route.ts', common);
   const infoResponse = await endpoint.GET(new Request('http://localhost/api/anime/episode_info?id=dr_12442&ep=2'));
-  assert.equal(infoResponse.status, 200);
   const info = await infoResponse.json();
+  if (infoResponse.status !== 200) console.log('PLAYBACK_FAILURE', JSON.stringify(info));
+  assert.equal(infoResponse.status, 200);
   assert.equal(new URL(info.watch_url).pathname, '/drama/12442/406786118');
   assert.ok(info.proxied_m3u8.startsWith('/api/anime/stream/m3u8?'));
   assert.ok(sourceApiCalls > 0, 'fresh source API must be used');
