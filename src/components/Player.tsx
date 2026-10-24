@@ -4650,8 +4650,13 @@ export default function Player(props: PlayerProps) {
     <ArtPlayerInner
       {...props}
       onFallbackToIframe={(episodeNumber) => {
-        if (props.onRefreshStream) props.onRefreshStream(episodeNumber);
-        else setCurrentStreamType("iframe");
+        if (episodeNumber === undefined && (props.embedUrl || (props.serverSources && props.serverSources.length > 0))) {
+          setCurrentStreamType("iframe");
+        } else if (props.onRefreshStream) {
+          props.onRefreshStream(episodeNumber);
+        } else {
+          setCurrentStreamType("iframe");
+        }
       }}
     />
   );

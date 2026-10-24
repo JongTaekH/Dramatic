@@ -11,6 +11,9 @@ type EpisodePlaybackProps = Omit<PlayerProps,
 interface PlaybackSource {
   url: string;
   rawUrl?: string;
+  embedUrl?: string;
+  serverSources?: PlayerProps["serverSources"];
+  streamType?: "m3u8" | "iframe";
   subtitle: string;
   title?: string;
   previous?: number | null;
@@ -170,9 +173,20 @@ export default function EpisodePlayback(props: EpisodePlaybackProps) {
             }
           }
           if (!controller.signal.aborted) {
+            let safeEmbedUrl = "";
+            if (typeof data.embed_url === "string" && data.embed_url) {
+              try {
+                const parsedEmbed = new URL(data.embed_url);
+                if (parsedEmbed.protocol === "https:" && parsedEmbed.hostname === "player.bunny-frame.online") {
+                  safeEmbedUrl = parsedEmbed.toString();
+                }
+              } catch {}
+            }
             setSource({
               url: resolvedM3u8Url,
               rawUrl: typeof data.raw_m3u8 === "string" ? data.raw_m3u8 : undefined,
+              embedUrl: safeEmbedUrl || undefined,
+              serverSources: Array.isArray(data.server_sources) ? data.server_sources : undefined,
               subtitle: data.proxied_vtt || "",
               title: data.episode_title,
               previous: data.link_pre_ep_num,
@@ -191,8 +205,13 @@ export default function EpisodePlayback(props: EpisodePlaybackProps) {
 
   const refreshStream = useCallback((currentEpisode?: number) => {
     if (automaticRefreshes.current >= 1) {
-      setSource(null);
-      setError("영상 서버 연결을 복구하지 못했습니다. 다시 시도해 주세요.");
+      setSource(prev => {
+        if (prev?.embedUrl) {
+          return { ...prev, streamType: "iframe" };
+        }
+        setError("영상 서버 연결을 복구하지 못했습니다. 다시 시도해 주세요.");
+        return null;
+      });
       return;
     }
     automaticRefreshes.current += 1;
@@ -225,6 +244,7 @@ export default function EpisodePlayback(props: EpisodePlaybackProps) {
     episodeNumber={requestedEpisode} initialEpTitle={source.title || props.initialEpTitle}
     linkPreEp={source.previous === undefined ? props.linkPreEp : source.previous}
     linkNextEp={source.next === undefined ? props.linkNextEp : source.next}
-    m3u8Url={source.url} defaultVttUrl={source.subtitle} streamType="m3u8"
+    m3u8Url={source.url} defaultVttUrl={source.subtitle} streamType={source.streamType || "m3u8"}
+    embedUrl={source.embedUrl} serverSources={source.serverSources}
     onRefreshStream={refreshStream} />;
 }

@@ -887,14 +887,48 @@ export async function resolveTvwikiEpisodeStream(
               } catch {}
             }
             const defaultPlayerRef = "https://player.bunny-frame.online/";
+            let embedUrl = "";
+            if (apiJson.episode?.session_data1 && typeof apiJson.episode.session_data1 === "object") {
+              try {
+                const rawCookies = apiRes.headers?.["set-cookie"];
+                const cookieHeader = Array.isArray(rawCookies)
+                  ? rawCookies.map((c) => c.split(";")[0]).join("; ")
+                  : typeof rawCookies === "string"
+                  ? rawCookies.split(";")[0]
+                  : "";
+                const sessRes = await fetcher(`${cleanBaseUrl}/api/create_session.php`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Referer: targetEpUrl,
+                    Origin: cleanBaseUrl,
+                    ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+                  },
+                  body: JSON.stringify(apiJson.episode.session_data1),
+                  timeoutMs: 4000,
+                });
+                if (sessRes.ok && sessRes.body) {
+                  const sessJson = JSON.parse(sessRes.body);
+                  if (sessJson?.success && sessJson?.player_url) {
+                    const signedUrl = new URL(sessJson.player_url, cleanBaseUrl);
+                    if (["https:", "http:"].includes(signedUrl.protocol)) {
+                      if (sessJson.t) signedUrl.searchParams.set("t", sessJson.t);
+                      if (sessJson.sig) signedUrl.searchParams.set("sig", sessJson.sig);
+                      embedUrl = signedUrl.toString();
+                    }
+                  }
+                }
+              } catch {}
+            }
+            const effectiveRef = embedUrl || defaultPlayerRef;
             return {
               success: true,
               m3u8_url: resolvedHls.toString(),
               vtt_url: vttUrl,
               player_url: defaultPlayerRef,
-              embed_url: "",
+              embed_url: embedUrl,
               stream_type: "m3u8",
-              server_sources: [{ label: "TVWIKI 고화질 서버", player_url: defaultPlayerRef }],
+              server_sources: [{ label: "TVWIKI 고화질 서버", player_url: effectiveRef }],
               link_next: "",
               link_pre: "",
             };
