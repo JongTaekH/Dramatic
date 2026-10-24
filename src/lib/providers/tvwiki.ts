@@ -904,11 +904,46 @@ export async function resolveTvwikiEpisodeStream(
   const embedUrl = signedPlayerUrl.toString();
   let m3u8Url = "";
   let vttUrl = typeof sessionData.vtt === "string" && sessionData.vtt.startsWith("http") ? sessionData.vtt : "";
-  let playerOrigin = "";
+  const playerOrigin = signedPlayerUrl.origin;
   let failureCode = "PLAYER_CONFIG_UNSUPPORTED";
+  let sourceFailureCode = "";
+  const streamInfo = (): EpisodeStreamInfo => ({
+    success: Boolean(m3u8Url), m3u8_url: m3u8Url, vtt_url: vttUrl,
+    player_url: embedUrl, embed_url: embedUrl,
+    stream_type: m3u8Url ? "m3u8" : "iframe",
+    unsupported_reason: m3u8Url ? undefined : sourceFailureCode || failureCode,
+    server_sources: [{ label: "TVWIKI 고화질 서버", player_url: embedUrl }],
+    link_next: "", link_pre: "",
+  });
+  const readConfig = (config: any): boolean => {
+    if (!config || !["direct", "relay"].includes(config.mode) || typeof config.src !== "string" || !config.src) return false;
+    const source = new URL(config.src, embedUrl);
+    if (!["https:", "http:"].includes(source.protocol)) return false;
+    m3u8Url = source.toString();
+    if (!vttUrl && typeof config.subtitle === "string" && config.subtitle) {
+      const subtitle = new URL(config.subtitle, embedUrl);
+      if (["https:", "http:"].includes(subtitle.protocol)) vttUrl = subtitle.toString();
+    }
+    return true;
+  };
+
+  // This is the source endpoint used by the upstream player itself. It can be
+  // queried immediately after session creation, without navigating its HTML page.
+  if (typeof sessJson.short_id === "string" && /^[\w-]{1,128}$/.test(sessJson.short_id)) {
+    const sourceUrl = new URL("/player/api/source.php", playerOrigin);
+    sourceUrl.searchParams.set("id", sessJson.short_id);
+    try {
+      const sourceResponse = await fetcher(sourceUrl.toString(), {
+        headers: { Accept: "application/json", Referer: embedUrl, Origin: playerOrigin },
+        timeoutMs: 5000,
+      });
+      if (!sourceResponse.ok) sourceFailureCode = `PLAYER_SOURCE_HTTP_${sourceResponse.status}`;
+      else if (readConfig(JSON.parse(sourceResponse.body))) return streamInfo();
+      else sourceFailureCode = "PLAYER_SOURCE_INVALID";
+    } catch { sourceFailureCode = "PLAYER_SOURCE_FETCH_FAILED"; }
+  }
 
   try {
-    playerOrigin = new URL(embedUrl).origin;
     const pRes = await fetcher(embedUrl, {
       headers: { Referer: `${baseUrl.replace(/\/+$/, "")}/` },
       timeoutMs: 7000,
@@ -923,13 +958,7 @@ export async function resolveTvwikiEpisodeStream(
       if (configMatch) {
         try {
           const config = JSON.parse(configMatch[1]);
-          if ((config.mode === "direct" || config.mode === "relay") && typeof config.src === "string" && config.src) {
-            const source = new URL(config.src, embedUrl);
-            if (["https:", "http:"].includes(source.protocol)) m3u8Url = source.toString();
-          }
-          if (!vttUrl && typeof config.subtitle === "string" && /^https?:\/\//.test(config.subtitle)) {
-            vttUrl = config.subtitle;
-          }
+          readConfig(config);
         } catch {
           // Keep the legacy extraction and iframe fallback for other players.
         }
@@ -1046,23 +1075,7 @@ export async function resolveTvwikiEpisodeStream(
     failureCode = "PLAYER_FETCH_FAILED";
   }
 
-  return {
-    success: Boolean(m3u8Url),
-    m3u8_url: m3u8Url,
-    vtt_url: vttUrl,
-    player_url: embedUrl,
-    embed_url: embedUrl,
-    stream_type: m3u8Url ? "m3u8" : "iframe",
-    unsupported_reason: m3u8Url ? undefined : failureCode,
-    server_sources: [
-      {
-        label: "TVWIKI 고화질 서버",
-        player_url: embedUrl,
-      },
-    ],
-    link_next: "",
-    link_pre: "",
-  };
+  return streamInfo();
 }
 
 class TvwikiProvider implements AnimeProvider {

@@ -6,6 +6,16 @@ const crypto = require('node:crypto');
 const load = require('./load-ts.cjs');
 
 async function main() {
+  const realFetch = global.fetch;
+  let sourceApiCalls = 0;
+  let playerDocumentCalls = 0;
+  global.fetch = (input, options) => {
+    const url = new URL(typeof input === 'string' ? input : input.url || input.toString());
+    if (url.pathname === '/player/api/source.php') sourceApiCalls++;
+    if (url.hostname.includes('bunny-frame') && /^\/v\/[^/]+$/.test(url.pathname)) playerDocumentCalls++;
+    return realFetch(input, options);
+  };
+  try {
   const provider = load('src/lib/providers/tvwiki.ts', { '../db': {
     DEFAULT_TVWIKI_URL: 'https://tvwiki55.net',
     getTvwikiBaseUrl: async () => 'https://tvwiki55.net',
@@ -28,6 +38,8 @@ async function main() {
   const info = await infoResponse.json();
   assert.equal(new URL(info.watch_url).pathname, '/drama/12442/406786118');
   assert.ok(info.proxied_m3u8.startsWith('/api/anime/stream/m3u8?'));
+  assert.ok(sourceApiCalls > 0, 'fresh source API must be used');
+  assert.equal(playerDocumentCalls, 0, 'player document must not be needed');
   const manifestResponse = await playlist.GET(new Request(new URL(info.proxied_m3u8, 'http://localhost')));
   assert.equal(manifestResponse.status, 200);
   const manifest = await manifestResponse.text();
@@ -49,7 +61,8 @@ async function main() {
   const decoded = Buffer.concat([decipher.update(media), decipher.final()]);
   assert.equal(decoded.length % 188, 0);
   for (let offset = 0; offset < decoded.length; offset += 188) assert.equal(decoded[offset], 0x47);
-  console.log(JSON.stringify({ episode: 2, episodeInfo: 200, manifest: 200, keyBytes: key.length, media: 200, decodedBytes: decoded.length, allMpegTsPacketsValid: true }));
+  console.log(JSON.stringify({ episode: 2, sourceApiCalls, playerDocumentCalls, episodeInfo: 200, manifest: 200, keyBytes: key.length, media: 200, decodedBytes: decoded.length, allMpegTsPacketsValid: true }));
+  } finally { global.fetch = realFetch; }
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
