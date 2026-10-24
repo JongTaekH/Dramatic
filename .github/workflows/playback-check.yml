@@ -2,13 +2,6 @@ name: Playback source check
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/playback-check.yml'
-      - 'src/lib/providers/tvwiki.ts'
-      - 'src/app/api/anime/stream/**'
-      - 'tests/tvwiki-playback-live.cjs'
 
 permissions:
   contents: read

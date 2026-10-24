@@ -472,7 +472,19 @@ function ArtPlayerInner(props: PlayerProps & { onFallbackToIframe?: (episodeNumb
           throw new Error(data.message || "새 회차 스트림 정보를 불러오지 못했습니다.");
         }
 
-        const newM3u8 = data.proxied_m3u8;
+        let newM3u8: string = data.proxied_m3u8;
+        if (typeof data.raw_m3u8 === "string" && data.raw_m3u8.startsWith("https://")) {
+          try {
+            const { buildClientProxiedManifestBlobUrl } = await import("./EpisodePlayback");
+            const clientBlobUrl = await buildClientProxiedManifestBlobUrl(
+              data.raw_m3u8,
+              typeof data.player_ref === "string" && data.player_ref ? data.player_ref : "https://player.bunny-frame.online/"
+            );
+            if (clientBlobUrl) {
+              newM3u8 = clientBlobUrl;
+            }
+          } catch {}
+        }
         const newVtt = data.proxied_vtt || "";
         let newNextEp = data.link_next_ep_num ?? null;
         let newPreEp = data.link_pre_ep_num ?? null;

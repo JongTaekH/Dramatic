@@ -103,6 +103,8 @@ export async function GET(request: NextRequest) {
       episode_number: epNum,
       episode_title: epTitle,
       watch_url: watchUrl,
+      raw_m3u8: rawM3u8,
+      player_ref: playerRef,
       proxied_m3u8: proxiedM3u8,
       proxied_vtt: proxiedVtt,
       m3u8_url: proxiedM3u8,

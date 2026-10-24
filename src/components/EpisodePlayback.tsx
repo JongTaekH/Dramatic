@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Player, { type PlayerProps } from "./Player";
+import { decodeHlsKey } from "@/lib/hlsKey";
 
 type EpisodePlaybackProps = Omit<PlayerProps,
   "m3u8Url" | "defaultVttUrl" | "streamType" | "embedUrl" | "serverSources" | "onRefreshStream"
@@ -9,10 +10,112 @@ type EpisodePlaybackProps = Omit<PlayerProps,
 
 interface PlaybackSource {
   url: string;
+  rawUrl?: string;
   subtitle: string;
   title?: string;
   previous?: number | null;
   next?: number | null;
+}
+
+export async function buildClientProxiedManifestBlobUrl(
+  rawM3u8Url: string,
+  playerRef = "https://player.bunny-frame.online/",
+  signal?: AbortSignal
+): Promise<string | null> {
+  if (!rawM3u8Url || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+    return null;
+  }
+  try {
+    const res = await fetch(rawM3u8Url, {
+      cache: "no-store",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      signal,
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text.trim().startsWith("#EXTM3U")) return null;
+
+    const lines = text.split(/\r?\n/);
+    let keyDataUri = "";
+
+    // Find and decode #EXT-X-KEY on the client so poorcdn's IP-bound key7 token succeeds
+    for (const line of lines) {
+      const stripped = line.trim();
+      if (stripped.startsWith("#EXT-X-KEY:") && stripped.includes('URI="')) {
+        const match = stripped.match(/URI="([^"]+)"/);
+        if (match && match[1]) {
+          const absKeyUrl = new URL(match[1], rawM3u8Url).toString();
+          const keyRes = await fetch(absKeyUrl, {
+            cache: "no-store",
+            credentials: "omit",
+            referrerPolicy: "no-referrer",
+            signal,
+          });
+          if (!keyRes.ok) return null;
+          const rawKeyBytes = new Uint8Array(await keyRes.arrayBuffer());
+          const decodedKey = decodeHlsKey(rawKeyBytes);
+          let binary = "";
+          for (let i = 0; i < decodedKey.length; i++) {
+            binary += String.fromCharCode(decodedKey[i]);
+          }
+          keyDataUri = `data:application/octet-stream;base64,${btoa(binary)}`;
+          break;
+        }
+      }
+    }
+
+    const isMasterPlaylist = text.includes("#EXT-X-STREAM-INF");
+    let prevLine = "";
+    const newLines: string[] = [];
+
+    for (const line of lines) {
+      const stripped = line.trim();
+      const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+      if (stripped && !stripped.startsWith("#")) {
+        const absUrl = new URL(stripped, rawM3u8Url).toString();
+        const isSubPlaylist =
+          isMasterPlaylist ||
+          prevLine.startsWith("#EXT-X-STREAM-INF") ||
+          absUrl.includes(".m3u8") ||
+          absUrl.includes("/m3/") ||
+          absUrl.endsWith(".txt");
+        if (isSubPlaylist) {
+          newLines.push(
+            `${origin}/api/anime/stream/m3u8?url=${encodeURIComponent(absUrl)}&ref=${encodeURIComponent(playerRef)}`
+          );
+        } else {
+          newLines.push(
+            `${origin}/api/anime/stream/segment?url=${encodeURIComponent(absUrl)}&ref=${encodeURIComponent(playerRef)}`
+          );
+        }
+      } else if (stripped.startsWith("#EXT-X-KEY:") && stripped.includes('URI="')) {
+        if (keyDataUri) {
+          newLines.push(stripped.replace(/URI="([^"]+)"/, `URI="${keyDataUri}"`));
+        } else {
+          const replaced = stripped.replace(/URI="([^"]+)"/, (_, rawUri) => {
+            const abs = new URL(rawUri, rawM3u8Url).toString();
+            return `URI="${origin}/api/anime/stream/segment?url=${encodeURIComponent(abs)}&ref=${encodeURIComponent(playerRef)}"`;
+          });
+          newLines.push(replaced);
+        }
+      } else if (stripped.startsWith("#EXT-X-MEDIA:") && stripped.includes('URI="')) {
+        const replaced = stripped.replace(/URI="([^"]+)"/, (_, rawUri) => {
+          const abs = new URL(rawUri, rawM3u8Url).toString();
+          return `URI="${origin}/api/anime/stream/m3u8?url=${encodeURIComponent(abs)}&ref=${encodeURIComponent(playerRef)}"`;
+        });
+        newLines.push(replaced);
+      } else {
+        newLines.push(line);
+      }
+      if (stripped) prevLine = stripped;
+    }
+
+    const blob = new Blob([newLines.join("\n")], { type: "application/vnd.apple.mpegurl" });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 }
 
 export default function EpisodePlayback(props: EpisodePlaybackProps) {
@@ -55,8 +158,27 @@ export default function EpisodePlayback(props: EpisodePlaybackProps) {
           throw new Error(data.message || "영상 재생 정보를 가져오지 못했습니다.");
         }
         if (!controller.signal.aborted) {
-          setSource({ url: data.proxied_m3u8, subtitle: data.proxied_vtt || "",
-            title: data.episode_title, previous: data.link_pre_ep_num, next: data.link_next_ep_num });
+          let resolvedM3u8Url: string = data.proxied_m3u8;
+          if (typeof data.raw_m3u8 === "string" && data.raw_m3u8.startsWith("https://")) {
+            const clientBlobUrl = await buildClientProxiedManifestBlobUrl(
+              data.raw_m3u8,
+              typeof data.player_ref === "string" && data.player_ref ? data.player_ref : "https://player.bunny-frame.online/",
+              controller.signal
+            );
+            if (clientBlobUrl) {
+              resolvedM3u8Url = clientBlobUrl;
+            }
+          }
+          if (!controller.signal.aborted) {
+            setSource({
+              url: resolvedM3u8Url,
+              rawUrl: typeof data.raw_m3u8 === "string" ? data.raw_m3u8 : undefined,
+              subtitle: data.proxied_vtt || "",
+              title: data.episode_title,
+              previous: data.link_pre_ep_num,
+              next: data.link_next_ep_num,
+            });
+          }
         }
       } catch (failure) {
         if (!controller.signal.aborted) {
