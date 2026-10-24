@@ -36,8 +36,27 @@ export async function GET(request: NextRequest) {
 
   const streamInfo = await provider.getEpisodeStream(watchUrl);
   if (!streamInfo?.m3u8_url) {
+    const code = streamInfo?.unsupported_reason || "STREAM_UNAVAILABLE";
+    const messages: Record<string, string> = {
+      EPISODE_FETCH_FAILED: "회차 페이지에 연결하지 못했습니다.",
+      EPISODE_EMPTY: "회차 페이지가 빈 응답을 보냈습니다.",
+      EPISODE_SESSION_MISSING: "회차 페이지에서 재생 세션 정보를 찾지 못했습니다.",
+      EPISODE_SESSION_INVALID: "회차 페이지의 재생 세션 정보를 읽지 못했습니다.",
+      SESSION_FETCH_FAILED: "영상 서버의 세션 발급에 연결하지 못했습니다.",
+      SESSION_EMPTY: "영상 서버가 빈 세션 응답을 보냈습니다.",
+      SESSION_INVALID: "영상 서버의 세션 응답을 읽지 못했습니다.",
+      SESSION_REJECTED: "영상 서버가 재생 세션 발급을 거부했습니다.",
+      PLAYER_FETCH_FAILED: "영상 플레이어 서버에 연결하지 못했습니다.",
+      PLAYER_EMPTY: "영상 플레이어 서버가 빈 응답을 보냈습니다.",
+      PLAYER_CONFIG_UNSUPPORTED: "영상 플레이어의 재생 설정을 읽지 못했습니다.",
+    };
+    const httpFailure = code.match(/^(EPISODE|SESSION|PLAYER)_HTTP_(\d+)$/);
+    const labels: Record<string, string> = { EPISODE: "회차 페이지", SESSION: "재생 세션 서버", PLAYER: "영상 플레이어 서버" };
+    const message = httpFailure
+      ? `${labels[httpFailure[1]]} 응답에 오류가 있습니다 (HTTP ${httpFailure[2]}).`
+      : messages[code] || "영상 서버에서 재생 주소를 가져오지 못했습니다.";
     return NextResponse.json(
-      { success: false, code: "STREAM_UNAVAILABLE", message: "영상 서버에서 재생 주소를 가져오지 못했습니다. 다시 시도해 주세요." },
+      { success: false, code, message: `${message} 다시 시도해 주세요.` },
       { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   }

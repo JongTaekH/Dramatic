@@ -275,47 +275,44 @@ export function sniSplitRequest(
  */
 export async function resilientFetch(
   urlStr: string,
-  options: ResilientFetchOptions = {}
+  options: ResilientFetchOptions = {},
+  fallback: typeof sniSplitRequest = sniSplitRequest
 ): Promise<ResilientFetchResponse> {
-  // Use sniSplitRequest directly for tvwiki / bunny-frame domains or fallback when standard fetch fails
-  const isTvwikiLike = /tvwiki|bunny-frame/i.test(urlStr);
-  if (!isTvwikiLike) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
-      const res = await fetch(urlStr, {
-        method: options.method || "GET",
-        headers: {
-          "User-Agent": DEFAULT_UA,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
-          "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-          ...(options.headers || {}),
-        },
-        body: options.body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      const body = await res.text();
-      const headersObj: Record<string, string | string[] | undefined> = {};
-      res.headers.forEach((v, k) => {
-        headersObj[k.toLowerCase()] = v;
-      });
-      if (typeof (res.headers as any).getSetCookie === "function") {
-        headersObj["set-cookie"] = (res.headers as any).getSetCookie();
-      }
-      return {
-        ok: res.ok,
-        status: res.status,
-        statusText: res.statusText,
-        headers: headersObj,
-        url: res.url || urlStr,
-        body,
-      };
-    } catch {
-      // Fallback to SNI split request
-    }
+  // Hosting environments may support normal HTTPS while rejecting custom TLS.
+  // Try both transports rather than forcing every TVWIKI/player request through one.
+  let primary: ResilientFetchResponse | undefined;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), Math.min(options.timeoutMs ?? 8000, 4000));
+  try {
+    const res = await fetch(urlStr, {
+      method: options.method || "GET",
+      cache: "no-store",
+      headers: {
+        "User-Agent": DEFAULT_UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        ...(options.headers || {}),
+      },
+      body: options.body,
+      signal: controller.signal,
+    });
+    const body = await res.text();
+    const headers: Record<string, string | string[] | undefined> = {};
+    res.headers.forEach((value, key) => { headers[key.toLowerCase()] = value; });
+    if (typeof res.headers.getSetCookie === "function") headers["set-cookie"] = res.headers.getSetCookie();
+    primary = { ok: res.ok, status: res.status, statusText: res.statusText, headers, url: res.url || urlStr, body };
+    if (![403, 429, 500, 502, 503, 504].includes(res.status)) return primary;
+  } catch {
+    // A blocked or timed-out ordinary connection can still work via the fallback.
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return sniSplitRequest(urlStr, options);
+  try {
+    return await fallback(urlStr, options);
+  } catch (error) {
+    if (primary) return primary;
+    throw error;
+  }
 }
 
 /**
@@ -832,6 +829,10 @@ export async function resolveTvwikiEpisodeStream(
   baseUrl: string,
   fetcher: typeof resilientFetch = resilientFetch
 ): Promise<EpisodeStreamInfo | null> {
+  const failed = (code: string): EpisodeStreamInfo => ({
+    success: false, m3u8_url: "", vtt_url: "", player_url: "",
+    server_sources: [], link_next: "", link_pre: "", unsupported_reason: code,
+  });
   // Replace host in watchUrl with current baseUrl in case domain changed
   let targetEpUrl = watchUrl;
   try {
@@ -842,21 +843,24 @@ export async function resolveTvwikiEpisodeStream(
     targetEpUrl = parsedWatch.toString();
   } catch {}
 
-  const epRes = await fetcher(targetEpUrl, {
-    headers: { Referer: `${baseUrl}/` },
-    timeoutMs: 8000,
-  });
-  if (!epRes.ok || !epRes.body) return null;
+  let epRes: ResilientFetchResponse;
+  try {
+    epRes = await fetcher(targetEpUrl, {
+      headers: { Referer: `${baseUrl}/` }, timeoutMs: 8000,
+    });
+  } catch { return failed("EPISODE_FETCH_FAILED"); }
+  if (!epRes.ok) return failed(`EPISODE_HTTP_${epRes.status}`);
+  if (!epRes.body) return failed("EPISODE_EMPTY");
 
   const $ = cheerio.load(epRes.body);
   const rawSession = $("#view_iframe").attr("data-session1");
-  if (!rawSession) return null;
+  if (!rawSession) return failed("EPISODE_SESSION_MISSING");
 
   let sessionData: Record<string, any>;
   try {
     sessionData = JSON.parse(rawSession);
   } catch {
-    return null;
+    return failed("EPISODE_SESSION_INVALID");
   }
 
   const rawCookies = epRes.headers["set-cookie"];
@@ -867,28 +871,31 @@ export async function resolveTvwikiEpisodeStream(
     : "";
 
   const createSessionUrl = `${baseUrl.replace(/\/+$/, "")}/api/create_session.php`;
-  const sessRes = await fetcher(createSessionUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Referer: targetEpUrl,
-      Origin: baseUrl.replace(/\/+$/, ""),
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-    },
-    body: JSON.stringify(sessionData),
-    timeoutMs: 8000,
-  });
+  let sessRes: ResilientFetchResponse;
+  try {
+    sessRes = await fetcher(createSessionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Referer: targetEpUrl,
+        Origin: baseUrl.replace(/\/+$/, ""),
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      },
+      body: JSON.stringify(sessionData), timeoutMs: 8000,
+    });
+  } catch { return failed("SESSION_FETCH_FAILED"); }
 
-  if (!sessRes.ok || !sessRes.body) return null;
+  if (!sessRes.ok) return failed(`SESSION_HTTP_${sessRes.status}`);
+  if (!sessRes.body) return failed("SESSION_EMPTY");
 
   let sessJson: any;
   try {
     sessJson = JSON.parse(sessRes.body);
   } catch {
-    return null;
+    return failed("SESSION_INVALID");
   }
 
-  if (!sessJson?.success || !sessJson?.player_url) return null;
+  if (!sessJson?.success || !sessJson?.player_url) return failed("SESSION_REJECTED");
 
   const signedPlayerUrl = new URL(sessJson.player_url, baseUrl);
   if (!['https:', 'http:'].includes(signedPlayerUrl.protocol)) return null;
@@ -898,6 +905,7 @@ export async function resolveTvwikiEpisodeStream(
   let m3u8Url = "";
   let vttUrl = typeof sessionData.vtt === "string" && sessionData.vtt.startsWith("http") ? sessionData.vtt : "";
   let playerOrigin = "";
+  let failureCode = "PLAYER_CONFIG_UNSUPPORTED";
 
   try {
     playerOrigin = new URL(embedUrl).origin;
@@ -905,6 +913,8 @@ export async function resolveTvwikiEpisodeStream(
       headers: { Referer: `${baseUrl.replace(/\/+$/, "")}/` },
       timeoutMs: 7000,
     });
+    if (!pRes.ok) failureCode = `PLAYER_HTTP_${pRes.status}`;
+    else if (!pRes.body) failureCode = "PLAYER_EMPTY";
 
     if (pRes.ok && pRes.body) {
       // Current players publish a JSON configuration; the URL may end in .html
@@ -1032,17 +1042,18 @@ export async function resolveTvwikiEpisodeStream(
         }
       }
     }
-  } catch (err) {
-    console.warn("[TVWIKI Lv3 m3u8 decrypt fallback to iframe]:", err);
+  } catch {
+    failureCode = "PLAYER_FETCH_FAILED";
   }
 
   return {
-    success: true,
+    success: Boolean(m3u8Url),
     m3u8_url: m3u8Url,
     vtt_url: vttUrl,
     player_url: embedUrl,
     embed_url: embedUrl,
     stream_type: m3u8Url ? "m3u8" : "iframe",
+    unsupported_reason: m3u8Url ? undefined : failureCode,
     server_sources: [
       {
         label: "TVWIKI 고화질 서버",
@@ -1187,7 +1198,9 @@ class TvwikiProvider implements AnimeProvider {
     try {
       let baseUrl = await this.getBaseUrl();
       let info = await resolveTvwikiEpisodeStream(watchUrl, baseUrl);
-      if (info) return info;
+      if (info?.m3u8_url) return info;
+      // A player/session error does not mean the main domain has moved.
+      if (info && !info.unsupported_reason?.startsWith("EPISODE_")) return info;
 
       const discovered = await resolveLatestTvwikiUrl();
       if (discovered && discovered !== baseUrl) {

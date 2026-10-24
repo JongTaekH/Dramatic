@@ -20,10 +20,25 @@ test('episode API rejects a failed HLS resolution rather than reporting successf
     '@/lib/auth': { getSessionUser: async () => ({ id: 2 }) },
     '@/lib/providers': { getProviderByAnimeId: () => ({
       getAnimeDetail: async () => ({ title: 'Test', sub_episodes: [{ number: 2, watch_url: 'https://tvwiki55.net/drama/1/123' }], dub_episodes: [] }),
-      getEpisodeStream: async () => ({ success: true, stream_type: 'iframe', m3u8_url: '', embed_url: 'https://player.example/v/invalid' }),
+      getEpisodeStream: async () => ({ success: false, stream_type: 'iframe', m3u8_url: '', embed_url: 'https://player.example/v/invalid', unsupported_reason: 'PLAYER_HTTP_403' }),
     }) },
   });
   const result = await route.GET(new Request('http://localhost/api/anime/episode_info?id=dr_1&ep=2'));
   assert.equal(result.status, 502);
-  assert.equal((await result.json()).success, false);
+  const data = await result.json();
+  assert.equal(data.success, false);
+  assert.equal(data.code, 'PLAYER_HTTP_403');
+  assert.ok(data.message.includes('403'));
+  assert.ok(!JSON.stringify(data).includes('player.example'));
+});
+
+test('player rejection is identified without exposing the signed player address', async () => {
+  const fetcher = async url => {
+    if (url.includes('/drama/')) return reply('<iframe id="view_iframe" data-session1="{&quot;idx&quot;:123}"></iframe>');
+    if (url.endsWith('create_session.php')) return reply(JSON.stringify({ success: true, player_url: 'https://player.example/v/123', t: 1, sig: 'private-signature' }));
+    return reply('Forbidden', 403);
+  };
+  const info = await provider.resolveTvwikiEpisodeStream('/drama/1/123', 'https://tvwiki55.net', fetcher);
+  assert.equal(info.unsupported_reason, 'PLAYER_HTTP_403');
+  assert.equal(info.success, false);
 });
